@@ -184,10 +184,15 @@ class NarrativeConsistencyPipeline:
         
         print("\nProcessing examples...")
         for example in tqdm(data):
+            # Handle different CSV column formats
+            story_id = example.get('story_id') or example.get('id')
+            novel_file = example.get('novel_file') or example.get('book_name')
+            backstory = example.get('backstory') or example.get('content')
+            
             result = self.process_example(
-                story_id=example['story_id'],
-                novel_file=example['novel_file'],
-                backstory=example['backstory']
+                story_id=str(story_id),
+                novel_file=str(novel_file),
+                backstory=str(backstory)
             )
             results.append(result)
         
@@ -214,25 +219,33 @@ class NarrativeConsistencyPipeline:
         labels = []
         
         for example in tqdm(train_data):
+            # Handle different CSV column formats
+            story_id = example.get('story_id') or example.get('id')
+            novel_file = example.get('novel_file') or example.get('book_name')
+            backstory = example.get('backstory') or example.get('content')
+            label_value = example.get('label')
+            
             result = self.process_example(
-                story_id=example['story_id'],
-                novel_file=example['novel_file'],
-                backstory=example['backstory']
+                story_id=str(story_id),
+                novel_file=str(novel_file),
+                backstory=str(backstory)
             )
             
             # Extract inconsistency score (would need to store this)
             # For now, use prediction as proxy
             scores.append(0.3 if result['prediction'] == 1 else 0.7)
-            labels.append(int(example['label']))
+            
+            # Convert label: "consistent" -> 1, "contradict" -> 0
+            if isinstance(label_value, str):
+                labels.append(1 if label_value.lower() == 'consistent' else 0)
+            else:
+                labels.append(int(label_value))
         
         # Calibrate threshold
         self.classifier.calibrate_threshold(scores, labels)
         
-        # Calculate metrics
-        predictions = [r['prediction'] for r in [
-            self.process_example(e['story_id'], e['novel_file'], e['backstory'])
-            for e in train_data
-        ]]
+        # Calculate metrics - reuse results from above
+        predictions = [1 if s < 0.5 else 0 for s in scores]
         
         metrics = calculate_metrics(predictions, labels)
         
