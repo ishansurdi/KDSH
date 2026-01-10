@@ -72,10 +72,21 @@ class NarrativeConsistencyPipeline:
         try:
             # Load/ingest novel (with caching)
             if novel_file not in self.novel_cache:
-                novel_path = Path('data/novels') / novel_file
+                # Try multiple possible paths
+                possible_paths = [
+                    Path('data/novels') / f"{novel_file}.txt",
+                    Path('data/novels') / novel_file,
+                    Path(novel_file)  # Direct path
+                ]
                 
-                if not novel_path.exists():
-                    raise FileNotFoundError(f"Novel not found: {novel_path}")
+                novel_path = None
+                for path in possible_paths:
+                    if path.exists():
+                        novel_path = path
+                        break
+                
+                if novel_path is None:
+                    raise FileNotFoundError(f"Novel not found. Tried: {[str(p) for p in possible_paths]}")
                 
                 with open(novel_path, 'r', encoding='utf-8') as f:
                     novel_text = f.read()
@@ -198,6 +209,10 @@ class NarrativeConsistencyPipeline:
         
         # Save results if output path provided
         if output_path:
+            # Ensure output directory exists
+            output_dir = Path(output_path).parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
             save_results(results, output_path)
             print(f"\n✓ Saved results to {output_path}")
         

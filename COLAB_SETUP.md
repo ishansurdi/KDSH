@@ -65,18 +65,19 @@ sys.path.insert(0, '.')
 from core import PathwayDocumentStore, HierarchicalNarrativeMemory, ConsistencyClassifier
 print("✅ Setup complete! Ready to run.")
 
-# Cell 4: Upload Sample Novel
-from google.colab import files
-print("Upload a novel text file:")
-novel_files = files.upload()
+# Cell 4: Download Novels (Required!)
+!python download_novels.py
 
-# Save to data/novels/
-import os
-os.makedirs('data/novels', exist_ok=True)
-for filename in novel_files:
-    with open(f'data/novels/{filename}', 'wb') as f:
-        f.write(novel_files[filename])
-    print(f"✅ Saved: data/novels/{filename}")
+# Alternative: Upload manually
+# from google.colab import files
+# print("Upload novel text files:")
+# novel_files = files.upload()
+# import os
+# os.makedirs('data/novels', exist_ok=True)
+# for filename in novel_files:
+#     with open(f'data/novels/{filename}', 'wb') as f:
+#         f.write(novel_files[filename])
+
 
 # Cell 5: Run Pipeline
 from main import NarrativeConsistencyPipeline
