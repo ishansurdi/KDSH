@@ -307,22 +307,35 @@ class CausalReasoningEngine:
         """Check if causal claim lacks supporting evidence"""
         evidence = evidence_map.get(claim.claim_id, [])
         
-        # Check if any evidence contains causal markers
+        # IMPROVED: Stricter check - causal claims MUST have causal evidence
         has_causal_evidence = False
+        causal_evidence_count = 0
+        
         for ev in evidence:
             from .utils import extract_causal_markers
             markers = extract_causal_markers(ev.text)
             if markers:
                 has_causal_evidence = True
-                break
+                causal_evidence_count += 1
         
-        if not has_causal_evidence and len(evidence) < 3:
+        # STRICTER: If causal claim has no causal markers in evidence, flag it
+        if not has_causal_evidence:
             return CausalConflict(
                 conflict_type='missing_link',
                 claim_id=claim.claim_id,
-                description=f"Causal claim lacks causal evidence: {claim.text[:100]}",
+                description=f"Causal claim lacks any causal evidence: {claim.text[:100]}",
+                evidence_against=[ev.text[:150] for ev in evidence[:3]],
+                severity=0.8  # Higher severity
+            )
+        
+        # IMPROVED: Even with some causal evidence, if very weak, flag it
+        if causal_evidence_count < 2 and len(evidence) < 2:
+            return CausalConflict(
+                conflict_type='missing_link',
+                claim_id=claim.claim_id,
+                description=f"Causal claim has insufficient causal evidence: {claim.text[:100]}",
                 evidence_against=[],
-                severity=0.6
+                severity=0.65
             )
         
         return None
@@ -365,26 +378,67 @@ class CausalReasoningEngine:
         """Check if causal claim contradicts evidence"""
         evidence = evidence_map.get(claim.claim_id, [])
         
-        # Look for contradicting causal links in evidence
         claim_text_lower = claim.text.lower()
+        
+        # IMPROVED: More comprehensive contradiction patterns
+        negation_patterns = [
+            ('not', ['cause', 'led to', 'result', 'because', 'due to']),
+            ('never', ['cause', 'led to', 'result']),
+            ('impossible', ['cause', 'result', 'lead']),
+            ('cannot', ['cause', 'result', 'lead']),
+            ('did not', ['cause', 'result', 'lead']),
+            ('failed to', ['cause', 'result', 'lead']),
+            ('prevented', ['cause', 'result']),
+        ]
+        
+        contradicting_evidence = []
         
         for ev in evidence:
             ev_text_lower = ev.text.lower()
             
-            # Simple contradiction detection
-            if 'not' in ev_text_lower and any(
-                word in ev_text_lower 
-                for word in ['cause', 'led to', 'result']
-            ):
-                # Evidence mentions causal negation
-                return CausalConflict(
-                    conflict_type='contradiction',
-                    claim_id=claim.claim_id,
-                    description=f"Evidence contradicts causal claim",
-                    evidence_for=[],
-                    evidence_against=[ev.text[:200]],
-                    severity=0.7
-                )
+            # Check for negation patterns
+            for negation, causal_terms in negation_patterns:
+                if negation in ev_text_lower:
+                    if any(term in ev_text_lower for term in causal_terms):
+                        # Check if negation applies to the causal relationship in claim
+                        # Simple heuristic: if claim mentions entities and evidence negates causation
+                        if any(entity.lower() in ev_text_lower for entity in claim.entities):
+                            contradicting_evidence.append(ev.text[:200])
+                            break
+            
+            # IMPROVED: Check for opposite causal relationships
+            # If claim says "A caused B", but evidence says "A prevented B"
+            if 'prevent' in ev_text_lower or 'stop' in ev_text_lower or 'hinder' in ev_text_lower:
+                if any(entity.lower() in ev_text_lower for entity in claim.entities):
+                    contradicting_evidence.append(ev.text[:200])
+        
+        if contradicting_evidence:
+            return CausalConflict(
+                conflict_type='contradiction',
+                claim_id=claim.claim_id,
+                description=f"Evidence contradicts or negates causal claim: {claim.text[:100]}",
+                evidence_for=[],
+                evidence_against=contradicting_evidence,
+                severity=0.85  # High severity for direct contradictions
+            )
+        
+        # IMPROVED: Check for alternative causes that contradict the claim
+        alternative_causes = []
+        for ev in evidence:
+            ev_text_lower = ev.text.lower()
+            if any(marker in ev_text_lower for marker in ['actually', 'instead', 'rather', 'but']):
+                if any(causal in ev_text_lower for causal in ['caused', 'led to', 'resulted', 'because']):
+                    alternative_causes.append(ev.text[:200])
+        
+        if alternative_causes:
+            return CausalConflict(
+                conflict_type='contradiction',
+                claim_id=claim.claim_id,
+                description=f"Evidence suggests alternative causal explanation: {claim.text[:100]}",
+                evidence_for=[],
+                evidence_against=alternative_causes,
+                severity=0.7
+            )
         
         return None
     

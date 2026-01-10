@@ -121,8 +121,11 @@ class MultiHopRetriever:
         # Rerank if requested
         if rerank and all_results:
             all_results = self._rerank_results(all_results, query)
+            # IMPROVED: Ensure diversity in final results
+            all_results = self._ensure_diversity(all_results)
         
-        return all_results
+        # IMPROVED: Return more results for better coverage
+        return all_results[:top_k_per_hop * 2]
     
     def retrieve_for_claims(
         self,
@@ -388,3 +391,32 @@ class MultiHopRetriever:
                 chains.append(chain)
         
         return chains[:3]  # Return top 3 chains
+    
+    def _ensure_diversity(
+        self,
+        results: List[RetrievalResult],
+        similarity_threshold: float = 0.75
+    ) -> List[RetrievalResult]:
+        \"\"\"Ensure diversity in results by removing very similar chunks\"\"\"
+        if not results:
+            return results
+        
+        diverse_results = [results[0]]  # Keep first result
+        
+        for result in results[1:]:
+            # Check similarity with already selected results
+            is_diverse = True
+            result_words = set(result.text.lower().split())
+            
+            for selected in diverse_results:
+                selected_words = set(selected.text.lower().split())
+                overlap = len(result_words & selected_words) / max(len(result_words), len(selected_words), 1)
+                
+                if overlap > similarity_threshold:
+                    is_diverse = False
+                    break
+            
+            if is_diverse:
+                diverse_results.append(result)
+        
+        return diverse_results

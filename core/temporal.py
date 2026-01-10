@@ -298,6 +298,7 @@ class TemporalReasoningEngine:
             if c.constraint_type == 'temporal'
         ]
         
+        # IMPROVED: Check all temporal constraints more strictly
         for constraint in temporal_constraints:
             # Check if constraint is satisfied
             source_event = None
@@ -311,6 +312,7 @@ class TemporalReasoningEngine:
             
             if source_event and target_event:
                 if source_event.timestamp is not None and target_event.timestamp is not None:
+                    # Check different relation types
                     if constraint.relation == 'before':
                         if source_event.timestamp >= target_event.timestamp:
                             conflicts.append(TemporalConflict(
@@ -318,8 +320,48 @@ class TemporalReasoningEngine:
                                 event1_id=source_event.event_id,
                                 event2_id=target_event.event_id,
                                 description=f"Event order violation: {source_event.event_id} should be before {target_event.event_id}",
-                                severity=0.8
+                                evidence=[source_event.description[:150], target_event.description[:150]],
+                                severity=0.85 * constraint.confidence
                             ))
+                    elif constraint.relation == 'concurrent':
+                        if abs(source_event.timestamp - target_event.timestamp) > 1:
+                            conflicts.append(TemporalConflict(
+                                conflict_type='ordering',
+                                event1_id=source_event.event_id,
+                                event2_id=target_event.event_id,
+                                description=f"Events should be concurrent but occur at different times",
+                                severity=0.75 * constraint.confidence
+                            ))
+        
+        # IMPROVED: Check for circular temporal dependencies
+        cycles = self.constraint_graph.detect_cycles()
+        for cycle in cycles:
+            if len(cycle) > 1:
+                conflicts.append(TemporalConflict(
+                    conflict_type='ordering',
+                    event1_id=str(cycle[0]),
+                    event2_id=str(cycle[-1]),
+                    description=f"Circular temporal dependency detected: {' -> '.join(cycle[:3])}",
+                    severity=0.9
+                ))
+        
+        # IMPROVED: Check for conflicting temporal markers in text
+        for claim in claims:
+            if claim.claim_type == 'temporal':
+                text_lower = claim.text.lower()
+                # Check for contradictory temporal markers in same claim
+                has_before = any(word in text_lower for word in ['before', 'earlier', 'prior'])
+                has_after = any(word in text_lower for word in ['after', 'later', 'following'])
+                has_during = 'during' in text_lower or 'while' in text_lower
+                
+                # If claim has conflicting markers, flag it
+                if (has_before and has_after) or (has_before and has_during and has_after):
+                    conflicts.append(TemporalConflict(
+                        conflict_type='ordering',
+                        event1_id=claim.claim_id,
+                        description=f"Claim contains conflicting temporal markers: {claim.text[:150]}",
+                        severity=0.8
+                    ))
         
         return conflicts
     
@@ -345,34 +387,79 @@ class TemporalReasoningEngine:
         """Check for anachronisms (time period mismatches)"""
         conflicts = []
         
-        # Simple anachronism detection: check for modern terms in historical contexts
-        modern_terms = [
-            'computer', 'internet', 'smartphone', 'email',
-            'television', 'airplane', 'car', 'phone'
-        ]
+        # IMPROVED: More comprehensive anachronism detection
+        modern_tech = {
+            '20th_century': ['computer', 'internet', 'smartphone', 'email', 'television', 'radio', 'airplane', 'car', 'telephone'],
+            '19th_century_plus': ['telegraph', 'railroad', 'steam engine', 'photography'],
+            '18th_century_plus': ['printing press', 'gunpowder']
+        }
         
-        historical_markers = [
-            'medieval', 'ancient', 'renaissance', '18th century',
-            '19th century', 'victorian'
-        ]
+        historical_periods = {
+            'ancient': ['ancient', 'classical', 'roman empire', 'greek', 'bc', 'b.c.'],
+            'medieval': ['medieval', 'middle ages', 'feudal', 'knight', 'castle'],
+            'renaissance': ['renaissance', '15th century', '16th century'],
+            '17th_18th': ['17th century', '18th century', 'enlightenment', 'colonial'],
+            '19th': ['19th century', 'victorian', '1800s', 'industrial revolution'],
+        }
         
+        # Check each event
         for claim_id, event in self.events.items():
             desc_lower = event.description.lower()
             
-            # Check if context is historical
-            is_historical = any(marker in desc_lower for marker in historical_markers)
+            # Determine historical period
+            detected_period = None
+            for period, markers in historical_periods.items():
+                if any(marker in desc_lower for marker in markers):
+                    detected_period = period
+                    break
             
-            if is_historical:
-                # Check for modern terms
-                for term in modern_terms:
-                    if term in desc_lower:
-                        conflicts.append(TemporalConflict(
-                            conflict_type='anachronism',
-                            event1_id=event.event_id,
-                            description=f"Anachronism detected: '{term}' in historical context",
-                            evidence=[event.description],
-                            severity=0.7
-                        ))
+            if detected_period:
+                # Check for anachronistic technology
+                for tech_era, terms in modern_tech.items():
+                    # If detected period is before tech era, check for anachronistic terms
+                    if detected_period in ['ancient', 'medieval', 'renaissance']:
+                        # These periods can't have any modern tech
+                        for term in terms:
+                            if term in desc_lower:
+                                conflicts.append(TemporalConflict(
+                                    conflict_type='anachronism',
+                                    event1_id=event.event_id,
+                                    description=f"Anachronism: '{term}' in {detected_period} context",
+                                    evidence=[event.description[:200]],
+                                    severity=0.85
+                                ))
+                    elif detected_period == '17th_18th' and tech_era == '20th_century':
+                        for term in terms:
+                            if term in desc_lower:
+                                conflicts.append(TemporalConflict(
+                                    conflict_type='anachronism',
+                                    event1_id=event.event_id,
+                                    description=f"Anachronism: '{term}' in {detected_period} context",
+                                    evidence=[event.description[:200]],
+                                    severity=0.8
+                                ))
+            
+            # IMPROVED: Check evidence for temporal contradictions
+            evidence_list = evidence_map.get(claim_id, [])
+            for evidence in evidence_list:
+                ev_lower = evidence.text.lower()
+                # Look for explicit dates/years in evidence
+                year_pattern = r'\b(1[0-9]{3}|20[0-2][0-9])\b'
+                years_in_evidence = re.findall(year_pattern, ev_lower)
+                years_in_claim = re.findall(year_pattern, desc_lower)
+                
+                if years_in_evidence and years_in_claim:
+                    # Check if years are far apart (potential inconsistency)
+                    for ev_year in years_in_evidence:
+                        for claim_year in years_in_claim:
+                            if abs(int(ev_year) - int(claim_year)) > 50:
+                                conflicts.append(TemporalConflict(
+                                    conflict_type='anachronism',
+                                    event1_id=event.event_id,
+                                    description=f"Temporal mismatch: claim mentions {claim_year} but evidence mentions {ev_year}",
+                                    evidence=[evidence.text[:200]],
+                                    severity=0.75
+                                ))
         
         return conflicts
     

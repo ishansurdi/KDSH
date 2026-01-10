@@ -175,44 +175,55 @@ class ConsistencyClassifier:
         causal_conflicts: List,
         evidence_map: Dict[str, List]
     ) -> float:
-        """
-        Calculate confidence in prediction.
-        
-        High confidence when:
-        - Score is far from threshold
-        - Few conflicts or many conflicts (clear signal)
-        - Strong evidence
-        """
+        """Calculate confidence in prediction - IMPROVED for better discrimination"""
         # Distance from threshold
         distance = abs(inconsistency_score - self.threshold)
-        distance_confidence = min(distance * 2, 1.0)
+        distance_confidence = min(distance * 2.5, 1.0)  # TUNED: More aggressive scaling
         
-        # Conflict clarity
+        # IMPROVED: Conflict clarity with better weighting
         num_conflicts = len(temporal_conflicts) + len(causal_conflicts)
         if num_conflicts == 0:
-            conflict_confidence = 0.9  # Clear: no conflicts
-        elif num_conflicts > 5:
-            conflict_confidence = 0.9  # Clear: many conflicts
+            conflict_confidence = 0.85  # Clear: no conflicts (high confidence consistent)
+        elif num_conflicts >= 5:
+            conflict_confidence = 0.9  # Clear: many conflicts (high confidence inconsistent)
+        elif num_conflicts >= 3:
+            conflict_confidence = 0.8  # Multiple conflicts
+        elif num_conflicts >= 1:
+            conflict_confidence = 0.65  # Some conflicts
         else:
-            conflict_confidence = 0.5 + (num_conflicts / 10)
+            conflict_confidence = 0.5
         
-        # Evidence strength
+        # IMPROVED: Evidence strength with better assessment
         if evidence_map:
-            avg_evidence_count = np.mean([
-                len(evidences) for evidences in evidence_map.values()
-            ])
-            evidence_confidence = min(avg_evidence_count / 5, 1.0)
+            evidence_counts = [len(evidences) for evidences in evidence_map.values()]
+            avg_evidence_count = np.mean(evidence_counts)
+            min_evidence_count = min(evidence_counts)
+            
+            # Penalty for claims with very little evidence
+            if min_evidence_count < 2:
+                evidence_confidence = 0.5
+            else:
+                evidence_confidence = min(avg_evidence_count / 4, 1.0)
         else:
             evidence_confidence = 0.3
         
-        # Combine
-        overall_confidence = (
-            0.5 * distance_confidence +
-            0.3 * conflict_confidence +
-            0.2 * evidence_confidence
-        )
+        # IMPROVED: Better combination with conflict signal priority
+        if num_conflicts >= 3:
+            # When we have clear conflicts, prioritize that signal
+            overall_confidence = (
+                0.4 * distance_confidence +
+                0.5 * conflict_confidence +
+                0.1 * evidence_confidence
+            )
+        else:
+            # When conflicts are unclear, balance all signals
+            overall_confidence = (
+                0.5 * distance_confidence +
+                0.3 * conflict_confidence +
+                0.2 * evidence_confidence
+            )
         
-        return min(overall_confidence, 1.0)
+        return min(max(overall_confidence, 0.35), 0.95)  # Bounded confidence
     
     def _generate_rationale(
         self,

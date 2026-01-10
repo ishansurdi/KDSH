@@ -131,23 +131,51 @@ class InconsistencyScorer:
             )
             claim_scores.append(score)
         
-        # Aggregate claim scores
+        # IMPROVED: More aggressive aggregation
         overall_scores = [s['overall_inconsistency'] for s in claim_scores]
         
         if overall_scores:
-            # Use max inconsistency (most severe conflict determines outcome)
-            overall_inconsistency = max(overall_scores)
+            # Use BOTH max and average for better discrimination
+            max_inconsistency = max(overall_scores)
             avg_inconsistency = np.mean(overall_scores)
+            median_inconsistency = np.median(overall_scores)
+            
+            # IMPROVED: Weight heavily towards max (worst conflict matters most)
+            # But also consider average to detect systemic issues
+            overall_inconsistency = (
+                max_inconsistency * 0.6 +
+                avg_inconsistency * 0.3 +
+                median_inconsistency * 0.1
+            )
+            
+            # IMPROVED: Boost inconsistency if multiple claims are problematic
+            inconsistent_claim_count = sum(1 for s in claim_scores if s['overall_inconsistency'] > 0.5)
+            if inconsistent_claim_count >= 2:
+                # Multiple inconsistent claims is very bad
+                overall_inconsistency = min(overall_inconsistency + 0.15, 1.0)
+            elif inconsistent_claim_count >= 3:
+                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
+            
+            # IMPROVED: Factor in raw conflict counts directly
+            total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
+            if total_conflicts >= 3:
+                conflict_penalty = min(total_conflicts * 0.05, 0.3)
+                overall_inconsistency = min(overall_inconsistency + conflict_penalty, 1.0)
+            
         else:
             overall_inconsistency = 0.0
             avg_inconsistency = 0.0
+            max_inconsistency = 0.0
+            total_conflicts = 0
         
         return {
             'overall_inconsistency': overall_inconsistency,
             'average_inconsistency': avg_inconsistency,
+            'max_inconsistency': max_inconsistency,
             'claim_scores': claim_scores,
             'is_consistent': overall_inconsistency < 0.5,
-            'num_inconsistent_claims': sum(1 for s in claim_scores if not s['is_consistent'])
+            'num_inconsistent_claims': sum(1 for s in claim_scores if not s['is_consistent']),
+            'total_conflicts': total_conflicts
         }
     
     def _score_temporal(
@@ -161,18 +189,29 @@ class InconsistencyScorer:
         
         for conflict in temporal_conflicts:
             # Check if conflict involves this claim
-            # (Simplified: would need proper event-to-claim mapping)
-            if claim.claim_id in str(conflict.to_dict()):
+            conflict_dict = conflict.to_dict()
+            event_ids = [conflict_dict.get('event1_id'), conflict_dict.get('event2_id')]
+            
+            # IMPROVED: Better matching of conflicts to claims
+            if (claim.claim_id in str(conflict_dict) or 
+                any(claim.claim_id in str(eid) for eid in event_ids if eid)):
                 relevant_conflicts.append(conflict)
         
         if not relevant_conflicts:
             return 0.0  # No conflicts = consistent
         
-        # Weight by severity
-        total_severity = sum(c.severity for c in relevant_conflicts)
+        # IMPROVED: Weight by severity more aggressively
+        max_severity = max(c.severity for c in relevant_conflicts)
+        avg_severity = np.mean([c.severity for c in relevant_conflicts])
         
-        # Normalize (cap at 1.0)
-        return min(total_severity / len(relevant_conflicts), 1.0)
+        # Use max severity as primary signal (one bad conflict is enough)
+        # But also consider how many conflicts there are
+        num_conflicts_factor = min(len(relevant_conflicts) / 3, 1.0)
+        
+        # Combine max severity with count
+        inconsistency = max_severity * 0.7 + num_conflicts_factor * 0.3
+        
+        return min(inconsistency, 1.0)
     
     def _score_causal(
         self,
@@ -180,8 +219,8 @@ class InconsistencyScorer:
         causal_conflicts: List
     ) -> float:
         """Score causal consistency"""
-        if claim.claim_type != 'causal':
-            return 0.0  # Non-causal claims don't have causal conflicts
+        # Check all claims for causal issues, not just causal-type claims
+        # IMPROVED: Any claim can have causal implications
         
         # Count conflicts
         relevant_conflicts = [
@@ -190,12 +229,22 @@ class InconsistencyScorer:
         ]
         
         if not relevant_conflicts:
+            # IMPROVED: Even without explicit conflicts, check claim type
+            if claim.claim_type == 'causal':
+                # Causal claims without conflicts still need evidence
+                return 0.2  # Slight penalty for causal claims
             return 0.0
         
-        # Weight by severity
-        total_severity = sum(c.severity for c in relevant_conflicts)
+        # IMPROVED: Weight by both severity and count
+        max_severity = max(c.severity for c in relevant_conflicts)
+        avg_severity = np.mean([c.severity for c in relevant_conflicts])
+        num_conflicts = len(relevant_conflicts)
         
-        return min(total_severity / len(relevant_conflicts), 1.0)
+        # Multiple causal conflicts are very problematic
+        if num_conflicts >= 2:
+            return min(max_severity + 0.2, 1.0)
+        
+        return max_severity
     
     def _score_entity(
         self,
