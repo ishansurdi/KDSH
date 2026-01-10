@@ -16,6 +16,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from collections import defaultdict
 import json
+import re
 
 
 @dataclass

@@ -135,6 +135,9 @@ class InconsistencyScorer:
         # AGGRESSIVE: More aggressive aggregation - worst conflict matters MOST
         overall_scores = [s['overall_inconsistency'] for s in claim_scores]
         
+        # Initialize defaults
+        total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
+        
         if overall_scores:
             # Use BOTH max and average for better discrimination
             max_inconsistency = max(overall_scores)
@@ -151,14 +154,13 @@ class InconsistencyScorer:
             
             # IMPROVED: Boost inconsistency if multiple claims are problematic
             inconsistent_claim_count = sum(1 for s in claim_scores if s['overall_inconsistency'] > 0.5)
-            if inconsistent_claim_count >= 2:
+            if inconsistent_claim_count >= 3:
+                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
+            elif inconsistent_claim_count >= 2:
                 # Multiple inconsistent claims is very bad
                 overall_inconsistency = min(overall_inconsistency + 0.15, 1.0)
-            elif inconsistent_claim_count >= 3:
-                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
             
             # IMPROVED: Factor in raw conflict counts directly
-            total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
             if total_conflicts >= 3:
                 conflict_penalty = min(total_conflicts * 0.05, 0.3)
                 overall_inconsistency = min(overall_inconsistency + conflict_penalty, 1.0)
@@ -167,7 +169,6 @@ class InconsistencyScorer:
             overall_inconsistency = 0.0
             avg_inconsistency = 0.0
             max_inconsistency = 0.0
-            total_conflicts = 0
         
         return {
             'overall_inconsistency': overall_inconsistency,
