@@ -1,0 +1,351 @@
+"""
+Evidence-Grounded Inconsistency Scorer
+
+Aggregates multiple signals into an inconsistency score:
+- Temporal conflicts
+- Causal conflicts
+- Entity mismatches
+- Semantic contradictions
+- Evidence strength
+
+Research foundation:
+- Lattimer et al. 2023 (Long-doc inconsistency)
+- Rashkin et al. 2021 (Evidence attribution)
+"""
+
+from typing import List, Dict, Any, Tuple
+import numpy as np
+
+
+class InconsistencyScorer:
+    """
+    Multi-dimensional inconsistency scoring.
+    
+    Combines:
+    1. Temporal consistency score
+    2. Causal consistency score
+    3. Entity consistency score
+    4. Semantic contradiction score
+    5. Evidence coverage score
+    """
+    
+    def __init__(
+        self,
+        weights: Dict[str, float] = None
+    ):
+        """
+        Initialize scorer with component weights.
+        
+        Args:
+            weights: Dict of component weights (default: equal weighting)
+        """
+        self.weights = weights or {
+            'temporal': 0.25,
+            'causal': 0.25,
+            'entity': 0.20,
+            'semantic': 0.20,
+            'evidence': 0.10
+        }
+    
+    def score_claim(
+        self,
+        claim: Any,
+        evidence: List,
+        temporal_conflicts: List,
+        causal_conflicts: List,
+        memory
+    ) -> Dict[str, Any]:
+        """
+        Score a single claim for inconsistency.
+        
+        Args:
+            claim: Claim object
+            evidence: Evidence list for claim
+            temporal_conflicts: List of temporal conflicts
+            causal_conflicts: List of causal conflicts
+            memory: HierarchicalNarrativeMemory
+        
+        Returns:
+            Dict with scores and explanation
+        """
+        # Calculate component scores
+        temporal_score = self._score_temporal(claim, temporal_conflicts)
+        causal_score = self._score_causal(claim, causal_conflicts)
+        entity_score = self._score_entity(claim, evidence, memory)
+        semantic_score = self._score_semantic(claim, evidence)
+        evidence_score = self._score_evidence(claim, evidence)
+        
+        # Weighted combination
+        inconsistency_score = (
+            self.weights['temporal'] * temporal_score +
+            self.weights['causal'] * causal_score +
+            self.weights['entity'] * entity_score +
+            self.weights['semantic'] * semantic_score +
+            self.weights['evidence'] * evidence_score
+        )
+        
+        return {
+            'claim_id': claim.claim_id,
+            'overall_inconsistency': inconsistency_score,
+            'components': {
+                'temporal': temporal_score,
+                'causal': causal_score,
+                'entity': entity_score,
+                'semantic': semantic_score,
+                'evidence': evidence_score
+            },
+            'is_consistent': inconsistency_score < 0.5
+        }
+    
+    def score_backstory(
+        self,
+        claims: List,
+        evidence_map: Dict[str, List],
+        temporal_conflicts: List,
+        causal_conflicts: List,
+        memory
+    ) -> Dict[str, Any]:
+        """
+        Score entire backstory for consistency.
+        
+        Args:
+            claims: List of all claims
+            evidence_map: Evidence for each claim
+            temporal_conflicts: All temporal conflicts
+            causal_conflicts: All causal conflicts
+            memory: HierarchicalNarrativeMemory
+        
+        Returns:
+            Dict with overall score and per-claim breakdown
+        """
+        claim_scores = []
+        
+        for claim in claims:
+            evidence = evidence_map.get(claim.claim_id, [])
+            score = self.score_claim(
+                claim,
+                evidence,
+                temporal_conflicts,
+                causal_conflicts,
+                memory
+            )
+            claim_scores.append(score)
+        
+        # Aggregate claim scores
+        overall_scores = [s['overall_inconsistency'] for s in claim_scores]
+        
+        if overall_scores:
+            # Use max inconsistency (most severe conflict determines outcome)
+            overall_inconsistency = max(overall_scores)
+            avg_inconsistency = np.mean(overall_scores)
+        else:
+            overall_inconsistency = 0.0
+            avg_inconsistency = 0.0
+        
+        return {
+            'overall_inconsistency': overall_inconsistency,
+            'average_inconsistency': avg_inconsistency,
+            'claim_scores': claim_scores,
+            'is_consistent': overall_inconsistency < 0.5,
+            'num_inconsistent_claims': sum(1 for s in claim_scores if not s['is_consistent'])
+        }
+    
+    def _score_temporal(
+        self,
+        claim: Any,
+        temporal_conflicts: List
+    ) -> float:
+        """Score temporal consistency (0 = consistent, 1 = very inconsistent)"""
+        # Count conflicts involving this claim
+        relevant_conflicts = []
+        
+        for conflict in temporal_conflicts:
+            # Check if conflict involves this claim
+            # (Simplified: would need proper event-to-claim mapping)
+            if claim.claim_id in str(conflict.to_dict()):
+                relevant_conflicts.append(conflict)
+        
+        if not relevant_conflicts:
+            return 0.0  # No conflicts = consistent
+        
+        # Weight by severity
+        total_severity = sum(c.severity for c in relevant_conflicts)
+        
+        # Normalize (cap at 1.0)
+        return min(total_severity / len(relevant_conflicts), 1.0)
+    
+    def _score_causal(
+        self,
+        claim: Any,
+        causal_conflicts: List
+    ) -> float:
+        """Score causal consistency"""
+        if claim.claim_type != 'causal':
+            return 0.0  # Non-causal claims don't have causal conflicts
+        
+        # Count conflicts
+        relevant_conflicts = [
+            c for c in causal_conflicts
+            if c.claim_id == claim.claim_id
+        ]
+        
+        if not relevant_conflicts:
+            return 0.0
+        
+        # Weight by severity
+        total_severity = sum(c.severity for c in relevant_conflicts)
+        
+        return min(total_severity / len(relevant_conflicts), 1.0)
+    
+    def _score_entity(
+        self,
+        claim: Any,
+        evidence: List,
+        memory
+    ) -> float:
+        """Score entity consistency"""
+        if not claim.entities:
+            return 0.0  # No entities to check
+        
+        inconsistencies = 0
+        total_checks = 0
+        
+        for entity in claim.entities:
+            # Check entity consistency in memory
+            consistency_check = memory.check_character_consistency(
+                entity,
+                claim.text
+            )
+            
+            total_checks += 1
+            
+            if not consistency_check['is_consistent']:
+                inconsistencies += len(consistency_check['conflicts'])
+        
+        if total_checks == 0:
+            return 0.0
+        
+        # Normalize
+        return min(inconsistencies / total_checks, 1.0)
+    
+    def _score_semantic(
+        self,
+        claim: Any,
+        evidence: List
+    ) -> float:
+        """Score semantic contradiction"""
+        if not evidence:
+            return 0.5  # No evidence = moderate concern
+        
+        # Check for contradiction keywords in evidence
+        contradiction_signals = [
+            'not', 'never', 'no', "didn't", "wasn't", "weren't",
+            'contradiction', 'impossible', 'incorrect'
+        ]
+        
+        contradiction_count = 0
+        
+        for ev in evidence:
+            text_lower = ev.text.lower()
+            
+            # Count contradiction signals
+            for signal in contradiction_signals:
+                if signal in text_lower:
+                    contradiction_count += 1
+        
+        if contradiction_count == 0:
+            return 0.0
+        
+        # Normalize by evidence count
+        return min(contradiction_count / len(evidence), 1.0)
+    
+    def _score_evidence(
+        self,
+        claim: Any,
+        evidence: List
+    ) -> float:
+        """Score evidence quality and coverage"""
+        if not evidence:
+            return 1.0  # No evidence = very inconsistent
+        
+        # Check evidence strength
+        avg_score = np.mean([ev.score for ev in evidence])
+        
+        # Check evidence count
+        count_penalty = 0.0
+        if len(evidence) < 2:
+            count_penalty = 0.3
+        elif len(evidence) < 3:
+            count_penalty = 0.1
+        
+        # Lower score = better evidence
+        # Higher inconsistency = worse evidence
+        evidence_inconsistency = (1.0 - avg_score) + count_penalty
+        
+        return min(evidence_inconsistency, 1.0)
+    
+    def calibrate_weights(
+        self,
+        train_data: List[Dict[str, Any]],
+        train_labels: List[int]
+    ):
+        """
+        Calibrate component weights using training data.
+        
+        Args:
+            train_data: List of training examples with scores
+            train_labels: True labels (1 = consistent, 0 = inconsistent)
+        """
+        # Simple weight optimization (in production, use proper ML)
+        # This is a placeholder for demonstration
+        
+        # Try different weight combinations
+        best_accuracy = 0.0
+        best_weights = self.weights.copy()
+        
+        weight_options = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
+        
+        for temp_w in weight_options:
+            for caus_w in weight_options:
+                remaining = 1.0 - temp_w - caus_w
+                if remaining < 0:
+                    continue
+                
+                # Distribute remaining weight
+                ent_w = remaining * 0.4
+                sem_w = remaining * 0.4
+                ev_w = remaining * 0.2
+                
+                test_weights = {
+                    'temporal': temp_w,
+                    'causal': caus_w,
+                    'entity': ent_w,
+                    'semantic': sem_w,
+                    'evidence': ev_w
+                }
+                
+                # Evaluate on training data
+                correct = 0
+                for data, label in zip(train_data, train_labels):
+                    # Calculate score with test weights
+                    score = (
+                        test_weights['temporal'] * data.get('temporal', 0) +
+                        test_weights['causal'] * data.get('causal', 0) +
+                        test_weights['entity'] * data.get('entity', 0) +
+                        test_weights['semantic'] * data.get('semantic', 0) +
+                        test_weights['evidence'] * data.get('evidence', 0)
+                    )
+                    
+                    pred = 1 if score < 0.5 else 0
+                    if pred == label:
+                        correct += 1
+                
+                accuracy = correct / len(train_labels)
+                
+                if accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_weights = test_weights
+        
+        self.weights = best_weights
+        print(f"✓ Calibrated weights: accuracy = {best_accuracy:.3f}")
+        print(f"  Weights: {self.weights}")
