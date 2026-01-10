@@ -288,137 +288,198 @@ class ConstraintBuilder:
         return graph
     
     def _extract_temporal_constraints(self, claims: List) -> List[Constraint]:
-        """Extract temporal ordering constraints"""
+        """Extract temporal ordering constraints AGGRESSIVELY"""
         constraints = []
         
-        # Find temporal claims
-        temporal_claims = [c for c in claims if c.claim_type == 'temporal']
-        
-        # IMPROVED: Extract before/after relations with better patterns
-        temporal_keywords = {
-            'before': ['before', 'prior to', 'earlier than', 'preceded'],
-            'after': ['after', 'following', 'later than', 'subsequent to'],
-            'during': ['during', 'while', 'as', 'when']
+        # AGGRESSIVE: Extract ALL temporal patterns
+        temporal_patterns = {
+            'before': ['before', 'prior to', 'earlier than', 'preceded', 'until', 'up to'],
+            'after': ['after', 'following', 'later than', 'subsequent to', 'since', 'from'],
+            'during': ['during', 'while', 'as', 'when', 'at the time'],
+            'age': ['age', 'years old', 'year old', 'aged'],
+            'date': ['in 18', 'in 19', 'in 20'],  # Date patterns
+            'life_stage': ['born', 'childhood', 'youth', 'married', 'died', 'graduated', 'retired']
         }
         
-        for claim in temporal_claims:
-            text = claim.text.lower()
-            
-            # Check for temporal keywords
-            for relation_type, keywords in temporal_keywords.items():
-                if any(kw in text for kw in keywords):
-                    # Find related claims
-                    for other_claim in claims:
-                        if other_claim.claim_id != claim.claim_id:
-                            # Check if entities overlap or sequential events
-                            if set(claim.entities) & set(other_claim.entities):
-                                if relation_type == 'before':
-                                    constraint = Constraint(
-                                        constraint_id=self._next_id(),
-                                        constraint_type='temporal',
-                                        source=claim.claim_id,
-                                        target=other_claim.claim_id,
-                                        relation='before',
-                                        confidence=0.8
-                                    )
-                                    constraints.append(constraint)
-                                elif relation_type == 'after':
-                                    constraint = Constraint(
-                                        constraint_id=self._next_id(),
-                                        constraint_type='temporal',
-                                        source=other_claim.claim_id,
-                                        target=claim.claim_id,
-                                        relation='before',
-                                        confidence=0.8
-                                    )
-                                    constraints.append(constraint)
-                                elif relation_type == 'during':
-                                    constraint = Constraint(
-                                        constraint_id=self._next_id(),
-                                        constraint_type='temporal',
-                                        source=claim.claim_id,
-                                        target=other_claim.claim_id,
-                                        relation='concurrent',
-                                        confidence=0.7
-                                    )
-                                    constraints.append(constraint)
-        
-        # IMPROVED: Infer temporal order from claim sequence (early events likely come first)
+        # AGGRESSIVE: Create constraints for EVERY claim pair with shared entities
         for i, claim1 in enumerate(claims):
-            if claim1.claim_type in ['event', 'temporal']:
-                for claim2 in claims[i+1:]:
-                    if claim2.claim_type in ['event', 'temporal']:
-                        if set(claim1.entities) & set(claim2.entities):
-                            # Weak temporal ordering assumption
-                            constraint = Constraint(
+            text1 = claim1.text.lower()
+            
+            # Extract temporal info from this claim
+            has_temporal1 = any(kw in text1 for patterns in temporal_patterns.values() for kw in patterns)
+            
+            for j, claim2 in enumerate(claims):
+                if i >= j:  # Skip self and already processed pairs
+                    continue
+                    
+                text2 = claim2.text.lower()
+                has_temporal2 = any(kw in text2 for patterns in temporal_patterns.values() for kw in patterns)
+                
+                # If shared entities OR both have temporal markers
+                if set(claim1.entities) & set(claim2.entities) or (has_temporal1 and has_temporal2):
+                    
+                    # Check for explicit ordering keywords
+                    for relation_type, keywords in temporal_patterns.items():
+                        if relation_type in ['before', 'after', 'during']:
+                            if any(kw in text1 for kw in keywords):
+                                constraints.append(Constraint(
+                                    constraint_id=self._next_id(),
+                                    constraint_type='temporal',
+                                    source=claim1.claim_id,
+                                    target=claim2.claim_id,
+                                    relation=relation_type,
+                                    confidence=0.85
+                                ))
+                            if any(kw in text2 for kw in keywords):
+                                constraints.append(Constraint(
+                                    constraint_id=self._next_id(),
+                                    constraint_type='temporal',
+                                    source=claim2.claim_id,
+                                    target=claim1.claim_id,
+                                    relation=relation_type,
+                                    confidence=0.85
+                                ))
+                    
+                    # Extract age constraints
+                    import re
+                    age_pattern = r'(\d+)\s*(?:years?\s*old|aged)'
+                    age1 = re.search(age_pattern, text1)
+                    age2 = re.search(age_pattern, text2)
+                    if age1 and age2:
+                        # Create age comparison constraint
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='temporal',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation=f'age_constraint_{age1.group(1)}_{age2.group(1)}',
+                            confidence=0.95
+                        ))
+                    
+                    # Life stage ordering constraints (birth before marriage before death)
+                    stages = ['born', 'childhood', 'youth', 'student', 'graduated', 'married', 'career', 'retired', 'died']
+                    stage1_idx = -1
+                    stage2_idx = -1
+                    for idx, stage in enumerate(stages):
+                        if stage in text1:
+                            stage1_idx = idx
+                        if stage in text2:
+                            stage2_idx = idx
+                    
+                    if stage1_idx >= 0 and stage2_idx >= 0 and stage1_idx != stage2_idx:
+                        if stage1_idx < stage2_idx:
+                            constraints.append(Constraint(
                                 constraint_id=self._next_id(),
                                 constraint_type='temporal',
                                 source=claim1.claim_id,
                                 target=claim2.claim_id,
-                                relation='possibly_before',
-                                confidence=0.3
-                            )
-                            constraints.append(constraint)
+                                relation='life_stage_before',
+                                confidence=0.95
+                            ))
+                        else:
+                            constraints.append(Constraint(
+                                constraint_id=self._next_id(),
+                                constraint_type='temporal',
+                                source=claim2.claim_id,
+                                target=claim1.claim_id,
+                                relation='life_stage_before',
+                                confidence=0.95
+                            ))
+                    
+                    # Default weak temporal ordering for sequential claims with shared entities
+                    if set(claim1.entities) & set(claim2.entities):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='temporal',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='sequential',
+                            confidence=0.5
+                        ))
         
         return constraints
     
     def _extract_causal_constraints(self, claims: List) -> List[Constraint]:
-        """Extract causal constraints"""
+        """Extract causal constraints AGGRESSIVELY"""
         constraints = []
         
-        # IMPROVED: More comprehensive causal markers
+        # AGGRESSIVE: Expanded causal markers
         causal_markers = {
-            'causes': ['caused', 'led to', 'resulted in', 'brought about', 'triggered'],
-            'because': ['because', 'due to', 'owing to', 'since', 'as a result of'],
-            'enables': ['enabled', 'allowed', 'made possible', 'facilitated'],
-            'prevents': ['prevented', 'stopped', 'hindered', 'blocked']
+            'causes': ['caused', 'led to', 'resulted in', 'brought about', 'triggered', 'produced', 'created'],
+            'because': ['because', 'due to', 'owing to', 'since', 'as a result of', 'thanks to', 'stems from'],
+            'enables': ['enabled', 'allowed', 'made possible', 'facilitated', 'permitted', 'let'],
+            'prevents': ['prevented', 'stopped', 'hindered', 'blocked', 'forbidden', 'unable to'],
+            'requires': ['requires', 'needs', 'demands', 'necessitates', 'must', 'depends on'],
+            'consequence': ['therefore', 'thus', 'consequently', 'as a consequence', 'so']
         }
         
-        # Find causal claims
-        causal_claims = [c for c in claims if c.claim_type == 'causal']
-        
-        for claim in causal_claims:
-            text = claim.text.lower()
+        # AGGRESSIVE: Check ALL claims, not just causal type
+        for i, claim1 in enumerate(claims):
+            text1 = claim1.text.lower()
             
-            # Check for each type of causal marker
+            # Check for causal markers in this claim
             for relation, markers in causal_markers.items():
-                if any(marker in text for marker in markers):
-                    # Link to related claims
-                    for other_claim in claims:
-                        if other_claim.claim_id != claim.claim_id:
-                            if set(claim.entities) & set(other_claim.entities):
-                                confidence = 0.8 if relation in ['causes', 'because'] else 0.7
-                                constraint = Constraint(
-                                    constraint_id=self._next_id(),
-                                    constraint_type='causal',
-                                    source=claim.claim_id,
-                                    target=other_claim.claim_id,
-                                    relation=relation,
-                                    confidence=confidence
-                                )
-                                constraints.append(constraint)
+                if any(marker in text1 for marker in markers):
+                    # Link to ALL other claims with shared entities
+                    for j, claim2 in enumerate(claims):
+                        if i != j and (set(claim1.entities) & set(claim2.entities)):
+                            confidence = 0.9 if relation in ['requires', 'prevents'] else 0.75
+                            constraints.append(Constraint(
+                                constraint_id=self._next_id(),
+                                constraint_type='causal',
+                                source=claim1.claim_id,
+                                target=claim2.claim_id,
+                                relation=relation,
+                                confidence=confidence
+                            ))
         
-        # IMPROVED: Infer implicit causal relationships
-        # Events involving the same entity often have causal relationships
-        event_claims = [c for c in claims if c.claim_type == 'event']
-        for i, claim1 in enumerate(event_claims):
-            for claim2 in event_claims[i+1:i+4]:  # Check next few events
+        # AGGRESSIVE: Prerequisite detection (actions need preconditions)
+        prerequisite_actions = {
+            'graduated': ['attended', 'studied', 'enrolled'],
+            'married': ['met', 'courted', 'engaged'],
+            'died': ['lived', 'born', 'existed'],
+            'won': ['competed', 'participated', 'entered'],
+            'published': ['wrote', 'composed', 'created'],
+            'retired': ['worked', 'employed', 'career']
+        }
+        
+        for i, claim1 in enumerate(claims):
+            text1 = claim1.text.lower()
+            for action, prerequisites in prerequisite_actions.items():
+                if action in text1:
+                    # This action requires prerequisites
+                    for j, claim2 in enumerate(claims):
+                        if i != j:
+                            text2 = claim2.text.lower()
+                            if any(prereq in text2 for prereq in prerequisites):
+                                if set(claim1.entities) & set(claim2.entities):
+                                    constraints.append(Constraint(
+                                        constraint_id=self._next_id(),
+                                        constraint_type='causal',
+                                        source=claim2.claim_id,
+                                        target=claim1.claim_id,
+                                        relation='prerequisite',
+                                        confidence=0.95
+                                    ))
+        
+        # AGGRESSIVE: Event chains (consecutive events with shared entities likely causal)
+        for i, claim1 in enumerate(claims):
+            for j in range(i+1, min(i+5, len(claims))):  # Check next 4 claims
+                claim2 = claims[j]
                 if set(claim1.entities) & set(claim2.entities):
-                    # Weak causal link (earlier event may influence later)
-                    constraint = Constraint(
+                    constraints.append(Constraint(
                         constraint_id=self._next_id(),
                         constraint_type='causal',
                         source=claim1.claim_id,
                         target=claim2.claim_id,
-                        relation='may_influence',
-                        confidence=0.4
-                    )
-                    constraints.append(constraint)
+                        relation='event_chain',
+                        confidence=0.6
+                    ))
         
         return constraints
     
     def _extract_entity_constraints(self, claims: List) -> List[Constraint]:
-        """Extract entity-based constraints"""
+        """Extract entity-based constraints AGGRESSIVELY"""
         constraints = []
         
         # Group claims by entity
@@ -427,39 +488,96 @@ class ConstraintBuilder:
             for entity in claim.entities:
                 entity_claims[entity].append(claim)
         
-        # IMPROVED: Create different types of entity constraints
+        # AGGRESSIVE: Create constraints for EVERY entity claim pair
         for entity, entity_claim_list in entity_claims.items():
             for i, claim1 in enumerate(entity_claim_list):
-                for claim2 in entity_claim_list[i+1:]:
-                    # Determine constraint relation type based on claim types
-                    relation = 'same_entity'
-                    confidence = 0.9
+                for j, claim2 in enumerate(entity_claim_list):
+                    if i >= j:
+                        continue
                     
-                    # State consistency constraints
-                    if 'was' in claim1.text.lower() and 'was' in claim2.text.lower():
-                        relation = 'state_consistency'
-                        confidence = 0.85
+                    text1 = claim1.text.lower()
+                    text2 = claim2.text.lower()
                     
-                    # Existence constraints
-                    elif 'exist' in claim1.text.lower() or 'exist' in claim2.text.lower():
-                        relation = 'existence_requirement'
-                        confidence = 0.95
+                    # State/attribute constraints (high confidence)
+                    state_words = ['was', 'is', 'had', 'has', 'became', 'turned', 'remained']
+                    if any(w in text1 for w in state_words) and any(w in text2 for w in state_words):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='state_consistency',
+                            confidence=0.9
+                        ))
                     
-                    # Action constraints
-                    elif claim1.claim_type == 'event' and claim2.claim_type == 'event':
-                        relation = 'action_sequence'
-                        confidence = 0.7
+                    # Ability/capacity constraints
+                    ability_words = ['can', 'could', 'able to', 'unable', 'capable', 'incapable']
+                    if any(w in text1 for w in ability_words) or any(w in text2 for w in ability_words):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='ability_constraint',
+                            confidence=0.85
+                        ))
                     
-                    constraint = Constraint(
+                    # Physical property constraints (blind can't see, etc)
+                    physical_props = ['blind', 'deaf', 'mute', 'paralyzed', 'dead', 'alive', 'young', 'old']
+                    if any(prop in text1 for prop in physical_props) or any(prop in text2 for prop in physical_props):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='physical_property',
+                            confidence=0.95
+                        ))
+                    
+                    # Role/occupation constraints
+                    role_words = ['worked as', 'was a', 'served as', 'became a', 'profession', 'job', 'career']
+                    if any(r in text1 for r in role_words) or any(r in text2 for r in role_words):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='role_constraint',
+                            confidence=0.85
+                        ))
+                    
+                    # Location constraints (can't be in two places)
+                    location_words = ['in', 'at', 'lived', 'moved to', 'traveled', 'visited']
+                    if any(loc in text1 for loc in location_words) and any(loc in text2 for loc in location_words):
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='location_constraint',
+                            confidence=0.8
+                        ))
+                    
+                    # Action sequence constraints
+                    if claim1.claim_type == 'event' and claim2.claim_type == 'event':
+                        constraints.append(Constraint(
+                            constraint_id=self._next_id(),
+                            constraint_type='entity',
+                            source=claim1.claim_id,
+                            target=claim2.claim_id,
+                            relation='action_sequence',
+                            confidence=0.7
+                        ))
+                    
+                    # Default entity consistency constraint
+                    constraints.append(Constraint(
                         constraint_id=self._next_id(),
                         constraint_type='entity',
                         source=claim1.claim_id,
                         target=claim2.claim_id,
-                        relation=relation,
-                        confidence=confidence,
-                        metadata={'entity': entity}
-                    )
-                    constraints.append(constraint)
+                        relation='same_entity',
+                        confidence=0.8
+                    ))
         
         # IMPROVED: Add mutual exclusion constraints for contradictory states
         for entity, entity_claim_list in entity_claims.items():

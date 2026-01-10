@@ -37,14 +37,15 @@ class InconsistencyScorer:
         Initialize scorer with component weights.
         
         Args:
-            weights: Dict of component weights (default: equal weighting)
+            weights: Dict of component weights (default: AGGRESSIVE weighting)
         """
+        # AGGRESSIVE: Higher weights for conflicts, lower for evidence
         self.weights = weights or {
-            'temporal': 0.25,
-            'causal': 0.25,
-            'entity': 0.20,
-            'semantic': 0.20,
-            'evidence': 0.10
+            'temporal': 0.35,   # INCREASED from 0.25 - temporal conflicts are critical
+            'causal': 0.35,     # INCREASED from 0.25 - causal conflicts are critical
+            'entity': 0.15,     # Decreased slightly to emphasize conflicts
+            'semantic': 0.10,   # Decreased slightly to emphasize conflicts
+            'evidence': 0.05    # DECREASED from 0.10 - lack of evidence less important than conflicts
         }
     
     def score_claim(
@@ -131,7 +132,7 @@ class InconsistencyScorer:
             )
             claim_scores.append(score)
         
-        # IMPROVED: More aggressive aggregation
+        # AGGRESSIVE: More aggressive aggregation - worst conflict matters MOST
         overall_scores = [s['overall_inconsistency'] for s in claim_scores]
         
         if overall_scores:
@@ -140,11 +141,11 @@ class InconsistencyScorer:
             avg_inconsistency = np.mean(overall_scores)
             median_inconsistency = np.median(overall_scores)
             
-            # IMPROVED: Weight heavily towards max (worst conflict matters most)
-            # But also consider average to detect systemic issues
+            # AGGRESSIVE: Weight heavily towards max (worst conflict matters MOST)
+            # Changed from 0.6/0.3/0.1 to 0.7/0.2/0.1 - even more emphasis on worst case
             overall_inconsistency = (
-                max_inconsistency * 0.6 +
-                avg_inconsistency * 0.3 +
+                max_inconsistency * 0.7 +      # INCREASED emphasis on worst conflict
+                avg_inconsistency * 0.2 +       # DECREASED emphasis on average
                 median_inconsistency * 0.1
             )
             
@@ -200,16 +201,20 @@ class InconsistencyScorer:
         if not relevant_conflicts:
             return 0.0  # No conflicts = consistent
         
-        # IMPROVED: Weight by severity more aggressively
+        # AGGRESSIVE: Weight by severity MUCH more aggressively
         max_severity = max(c.severity for c in relevant_conflicts)
         avg_severity = np.mean([c.severity for c in relevant_conflicts])
         
-        # Use max severity as primary signal (one bad conflict is enough)
-        # But also consider how many conflicts there are
-        num_conflicts_factor = min(len(relevant_conflicts) / 3, 1.0)
+        # AGGRESSIVE: Even ONE high-severity temporal conflict should matter
+        num_conflicts_factor = min(len(relevant_conflicts) / 2, 1.0)  # Changed from /3 to /2
         
-        # Combine max severity with count
-        inconsistency = max_severity * 0.7 + num_conflicts_factor * 0.3
+        # AGGRESSIVE: Combine with more weight on max severity
+        # Changed from 0.7/0.3 to 0.8/0.2 - one bad conflict is enough!
+        inconsistency = max_severity * 0.8 + num_conflicts_factor * 0.2
+        
+        # AGGRESSIVE: Boost score if multiple high-severity conflicts
+        if len(relevant_conflicts) >= 2 and max_severity > 0.7:
+            inconsistency = min(inconsistency + 0.15, 1.0)  # Add bonus penalty
         
         return min(inconsistency, 1.0)
     
@@ -218,9 +223,9 @@ class InconsistencyScorer:
         claim: Any,
         causal_conflicts: List
     ) -> float:
-        """Score causal consistency"""
+        """Score causal consistency AGGRESSIVELY"""
         # Check all claims for causal issues, not just causal-type claims
-        # IMPROVED: Any claim can have causal implications
+        # Any claim can have causal implications
         
         # Count conflicts
         relevant_conflicts = [
@@ -229,22 +234,22 @@ class InconsistencyScorer:
         ]
         
         if not relevant_conflicts:
-            # IMPROVED: Even without explicit conflicts, check claim type
+            # AGGRESSIVE: Causal claims without conflicts still suspicious
             if claim.claim_type == 'causal':
-                # Causal claims without conflicts still need evidence
-                return 0.2  # Slight penalty for causal claims
+                return 0.3  # INCREASED from 0.2 - causal claims need strong evidence
             return 0.0
         
-        # IMPROVED: Weight by both severity and count
+        # AGGRESSIVE: Weight by both severity and count with higher penalties
         max_severity = max(c.severity for c in relevant_conflicts)
         avg_severity = np.mean([c.severity for c in relevant_conflicts])
         num_conflicts = len(relevant_conflicts)
         
-        # Multiple causal conflicts are very problematic
+        # AGGRESSIVE: Multiple causal conflicts are VERY problematic
         if num_conflicts >= 2:
-            return min(max_severity + 0.2, 1.0)
+            return min(max_severity + 0.3, 1.0)  # INCREASED from 0.2
         
-        return max_severity
+        # AGGRESSIVE: Even single causal conflict matters more
+        return min(max_severity * 1.1, 1.0)  # Amplify severity by 10%
     
     def _score_entity(
         self,
@@ -282,17 +287,20 @@ class InconsistencyScorer:
         claim: Any,
         evidence: List
     ) -> float:
-        """Score semantic contradiction"""
+        """Score semantic contradiction AGGRESSIVELY"""
         if not evidence:
-            return 0.5  # No evidence = moderate concern
+            return 0.6  # INCREASED from 0.5 - No evidence = higher concern
         
-        # Check for contradiction keywords in evidence
+        # AGGRESSIVE: Expanded contradiction keywords
         contradiction_signals = [
-            'not', 'never', 'no', "didn't", "wasn't", "weren't",
-            'contradiction', 'impossible', 'incorrect'
+            'not', 'never', 'no', "didn't", "wasn't", "weren't", "isn't",
+            'contradiction', 'impossible', 'incorrect', 'false', 'untrue',
+            'contrary', 'opposite', 'different from', 'rather than',
+            'instead', 'actually', 'however', 'but'
         ]
         
         contradiction_count = 0
+        strong_contradiction_count = 0
         
         for ev in evidence:
             text_lower = ev.text.lower()

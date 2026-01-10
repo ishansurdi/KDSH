@@ -366,9 +366,10 @@ class TemporalReasoningEngine:
         return conflicts
     
     def _check_duration_conflicts(self) -> List[TemporalConflict]:
-        """Check for impossible event durations"""
+        """Check for impossible event durations and AGE IMPOSSIBILITIES"""
         conflicts = []
         
+        # Check impossible durations
         for event_id, event in self.events.items():
             if event.duration and event.duration < 0:
                 conflicts.append(TemporalConflict(
@@ -377,6 +378,125 @@ class TemporalReasoningEngine:
                     description=f"Impossible duration: {event.duration}",
                     severity=0.9
                 ))
+        
+        # AGGRESSIVE: Check AGE IMPOSSIBILITIES across ALL events
+        # Extract ages from event descriptions
+        age_pattern = r'(\d+)\s*(?:years?\s*old|aged|age)'
+        date_pattern = r'(?:in\s+)?(1[7-9]\d{2}|20[0-2]\d)'
+        
+        events_with_ages = {}
+        events_with_dates = {}
+        life_stage_events = {}
+        
+        for event_id, event in self.events.items():
+            text = event.description.lower()
+            
+            # Extract age
+            age_match = re.search(age_pattern, text)
+            if age_match:
+                events_with_ages[event_id] = int(age_match.group(1))
+            
+            # Extract year
+            date_match = re.search(date_pattern, text)
+            if date_match:
+                events_with_dates[event_id] = int(date_match.group(1))
+            
+            # Extract life stages
+            if 'born' in text or 'birth' in text:
+                life_stage_events[event_id] = ('born', 0)
+            elif 'child' in text or 'childhood' in text:
+                life_stage_events[event_id] = ('childhood', 5)
+            elif 'graduated' in text or 'college' in text or 'university' in text:
+                life_stage_events[event_id] = ('graduated', 22)
+            elif 'married' in text or 'wed' in text:
+                life_stage_events[event_id] = ('married', 25)
+            elif 'retired' in text or 'retirement' in text:
+                life_stage_events[event_id] = ('retired', 65)
+            elif 'died' in text or 'death' in text:
+                life_stage_events[event_id] = ('died', 70)
+        
+        # VALIDATION 1: Age vs life stage validation
+        for event_id, age in events_with_ages.items():
+            if event_id in life_stage_events:
+                stage, min_age = life_stage_events[event_id]
+                
+                # Check impossible combinations
+                if stage == 'graduated' and age < 18:
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id,
+                        description=f"Cannot graduate at age {age} (too young, minimum ~18)",
+                        evidence=[self.events[event_id].description],
+                        severity=0.95
+                    ))
+                elif stage == 'married' and age < 16:
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id,
+                        description=f"Unlikely to be married at age {age} (too young)",
+                        evidence=[self.events[event_id].description],
+                        severity=0.9
+                    ))
+                elif stage == 'retired' and age < 50:
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id,
+                        description=f"Unlikely to retire at age {age} (too young, typical retirement 60+)",
+                        evidence=[self.events[event_id].description],
+                        severity=0.8
+                    ))
+                elif stage == 'childhood' and age > 12:
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id,
+                        description=f"Age {age} is beyond childhood (should be < 13)",
+                        evidence=[self.events[event_id].description],
+                        severity=0.85
+                    ))
+        
+        # VALIDATION 2: Date arithmetic (birth year + age should match event year)
+        birth_year = None
+        for event_id, (stage, _) in life_stage_events.items():
+            if stage == 'born' and event_id in events_with_dates:
+                birth_year = events_with_dates[event_id]
+                break
+        
+        if birth_year:
+            for event_id in events_with_ages:
+                age = events_with_ages[event_id]
+                if event_id in events_with_dates:
+                    event_year = events_with_dates[event_id]
+                    expected_age = event_year - birth_year
+                    
+                    # Check if ages match (allow ±2 year tolerance)
+                    if abs(age - expected_age) > 2:
+                        conflicts.append(TemporalConflict(
+                            conflict_type='impossibility',
+                            event1_id=event_id,
+                            description=f"Age mismatch: claims age {age} in year {event_year}, but born in {birth_year} means age should be ~{expected_age}",
+                            evidence=[self.events[event_id].description],
+                            severity=0.95
+                        ))
+        
+        # VALIDATION 3: Life stage ordering (can't graduate before childhood)
+        life_stage_order = ['born', 'childhood', 'graduated', 'married', 'retired', 'died']
+        sorted_stages = sorted(life_stage_events.items(), 
+                              key=lambda x: self.events[x[0]].timestamp if self.events[x[0]].timestamp else 999)
+        
+        for i, (event_id1, (stage1, _)) in enumerate(sorted_stages):
+            for event_id2, (stage2, _) in sorted_stages[i+1:]:
+                idx1 = life_stage_order.index(stage1) if stage1 in life_stage_order else -1
+                idx2 = life_stage_order.index(stage2) if stage2 in life_stage_order else -1
+                
+                if idx1 >= 0 and idx2 >= 0 and idx1 > idx2:
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id1,
+                        event2_id=event_id2,
+                        description=f"Life stage ordering violation: {stage1} cannot come before {stage2}",
+                        evidence=[self.events[event_id1].description, self.events[event_id2].description],
+                        severity=0.95
+                    ))
         
         return conflicts
     

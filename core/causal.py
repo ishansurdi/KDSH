@@ -86,7 +86,7 @@ class CausalReasoningEngine:
         evidence_map: Dict[str, List]
     ) -> List[CausalLink]:
         """
-        Extract causal links from evidence.
+        Extract causal links from evidence AGGRESSIVELY.
         
         Args:
             evidence_map: Dict mapping claim_id to evidence results
@@ -98,8 +98,9 @@ class CausalReasoningEngine:
         
         links = []
         
+        # AGGRESSIVE: Extract from ALL evidence, not just those with markers
         for claim_id, evidence_list in evidence_map.items():
-            for evidence in evidence_list:
+            for i, evidence in enumerate(evidence_list):
                 # Extract causal markers from evidence text
                 markers = extract_causal_markers(evidence.text)
                 
@@ -112,6 +113,43 @@ class CausalReasoningEngine:
                     )
                     if link:
                         links.append(link)
+                
+                # AGGRESSIVE: Also extract implicit causal links from sequential sentences
+                # If evidence contains action-consequence patterns
+                text_lower = evidence.text.lower()
+                
+                # Pattern: "X happened. Y resulted."
+                sentences = evidence.text.split('.')
+                if len(sentences) >= 2:
+                    for j in range(len(sentences) - 1):
+                        sent1 = sentences[j].strip()
+                        sent2 = sentences[j+1].strip()
+                        
+                        # Check if second sentence contains result words
+                        if any(word in sent2.lower() for word in ['as a result', 'therefore', 'thus', 'consequently', 'this led', 'this caused']):
+                            links.append(CausalLink(
+                                cause_id=f"{claim_id}_implicit_{i}_{j}",
+                                effect_id=f"{claim_id}_implicit_{i}_{j+1}",
+                                cause_text=sent1[:200],
+                                effect_text=sent2[:200],
+                                confidence=0.7,
+                                evidence=[evidence.text]
+                            ))
+                
+                # AGGRESSIVE: Extract prerequisite relationships
+                prerequisite_patterns = [
+                    'must', 'required', 'needed', 'necessary', 
+                    'prerequisite', 'depends on', 'relies on'
+                ]
+                if any(pattern in text_lower for pattern in prerequisite_patterns):
+                    links.append(CausalLink(
+                        cause_id=f"{claim_id}_prereq_{i}_cause",
+                        effect_id=f"{claim_id}_prereq_{i}_effect",
+                        cause_text=evidence.text[:200],
+                        effect_text="Prerequisite relationship",
+                        confidence=0.75,
+                        evidence=[evidence.text]
+                    ))
         
         self.causal_links = links
         print(f"✓ Extracted {len(links)} causal links from evidence")

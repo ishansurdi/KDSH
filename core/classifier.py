@@ -55,7 +55,7 @@ class ConsistencyClassifier:
         claims: List
     ) -> Dict[str, Any]:
         """
-        Classify backstory consistency.
+        Classify backstory consistency AGGRESSIVELY.
         
         Args:
             inconsistency_score: Overall inconsistency score
@@ -67,34 +67,16 @@ class ConsistencyClassifier:
         Returns:
             Dict with prediction, confidence, and rationale
         """
-        # Make prediction
-        prediction = 1 if inconsistency_score < self.threshold else 0
+        # AGGRESSIVE: Use MULTIPLE signals for classification, not just threshold
+        base_prediction = 1 if inconsistency_score < self.threshold else 0
         
-        # Calculate confidence
-        confidence = self._calculate_confidence(
-            inconsistency_score,
-            temporal_conflicts,
-            causal_conflicts,
-            evidence_map
-        )
+        # AGGRESSIVE: Override to inconsistent if HIGH-SEVERITY conflicts exist
+        high_severity_temporal = [c for c in temporal_conflicts if c.severity > 0.85]
+        high_severity_causal = [c for c in causal_conflicts if c.severity > 0.85]
         
-        # Generate rationale
-        rationale = self._generate_rationale(
-            prediction,
-            inconsistency_score,
-            temporal_conflicts,
-            causal_conflicts,
-            evidence_map,
-            claims
-        )
-        
-        return {
-            'prediction': prediction,
-            'confidence': confidence,
-            'rationale': rationale,
-            'inconsistency_score': inconsistency_score,
-            'num_conflicts': len(temporal_conflicts) + len(causal_conflicts)
-        }
+        # Even if score is below threshold, classify as inconsistent if multiple high-severity conflicts
+        if len(high_severity_temporal) >= 2 or len(high_severity_causal) >= 2:\n            prediction = 0  # Inconsistent
+        elif len(high_severity_temporal) >= 1 and len(high_severity_causal) >= 1:\n            prediction = 0  # Inconsistent (one of each type)\n        else:\n            prediction = base_prediction\n        \n        # AGGRESSIVE: Also override if score is close to threshold and conflicts exist\n        if base_prediction == 1 and inconsistency_score > (self.threshold * 0.85):\n            if len(temporal_conflicts) + len(causal_conflicts) >= 3:\n                prediction = 0  # Too many conflicts, even if score barely passes\n        \n        # Calculate confidence\n        confidence = self._calculate_confidence(\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map\n        )\n        \n        # Generate rationale\n        rationale = self._generate_rationale(\n            prediction,\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map,\n            claims\n        )\n        \n        return {\n            'prediction': prediction,\n            'confidence': confidence,\n            'rationale': rationale,\n            'inconsistency_score': inconsistency_score,\n            'num_conflicts': len(temporal_conflicts) + len(causal_conflicts)\n        }
     
     def classify_batch(
         self,
