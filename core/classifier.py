@@ -75,8 +75,17 @@ class ConsistencyClassifier:
         high_severity_causal = [c for c in causal_conflicts if c.severity > 0.85]
         
         # Even if score is below threshold, classify as inconsistent if multiple high-severity conflicts
-        if len(high_severity_temporal) >= 2 or len(high_severity_causal) >= 2:\n            prediction = 0  # Inconsistent
-        elif len(high_severity_temporal) >= 1 and len(high_severity_causal) >= 1:\n            prediction = 0  # Inconsistent (one of each type)\n        else:\n            prediction = base_prediction\n        \n        # AGGRESSIVE: Also override if score is close to threshold and conflicts exist\n        if base_prediction == 1 and inconsistency_score > (self.threshold * 0.85):\n            if len(temporal_conflicts) + len(causal_conflicts) >= 3:\n                prediction = 0  # Too many conflicts, even if score barely passes\n        \n        # Calculate confidence\n        confidence = self._calculate_confidence(\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map\n        )\n        \n        # Generate rationale\n        rationale = self._generate_rationale(\n            prediction,\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map,\n            claims\n        )\n        \n        return {\n            'prediction': prediction,\n            'confidence': confidence,\n            'rationale': rationale,\n            'inconsistency_score': inconsistency_score,\n            'num_conflicts': len(temporal_conflicts) + len(causal_conflicts)\n        }
+        if len(high_severity_temporal) >= 2 or len(high_severity_causal) >= 2:
+            prediction = 0  # Inconsistent
+        elif len(high_severity_temporal) >= 1 and len(high_severity_causal) >= 1:
+            prediction = 0  # Inconsistent (one of each type)
+        else:
+            prediction = base_prediction
+        
+        # AGGRESSIVE: Also override if score is close to threshold and conflicts exist
+        if base_prediction == 1 and inconsistency_score > (self.threshold * 0.85):
+            if len(temporal_conflicts) + len(causal_conflicts) >= 3:
+                prediction = 0  # Too many conflicts, even if score barely passes\n        \n        # Calculate confidence\n        confidence = self._calculate_confidence(\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map\n        )\n        \n        # Generate rationale\n        rationale = self._generate_rationale(\n            prediction,\n            inconsistency_score,\n            temporal_conflicts,\n            causal_conflicts,\n            evidence_map,\n            claims\n        )\n        \n        return {\n            'prediction': prediction,\n            'confidence': confidence,\n            'rationale': rationale,\n            'inconsistency_score': inconsistency_score,\n            'num_conflicts': len(temporal_conflicts) + len(causal_conflicts)\n        }
     
     def classify_batch(
         self,
