@@ -397,7 +397,7 @@ class MultiHopRetriever:
         results: List[RetrievalResult],
         similarity_threshold: float = 0.75
     ) -> List[RetrievalResult]:
-        \"\"\"Ensure diversity in results by removing very similar chunks\"\"\"
+        """Ensure diversity in results by removing very similar chunks"""
         if not results:
             return results
         
