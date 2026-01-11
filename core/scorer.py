@@ -41,10 +41,10 @@ class InconsistencyScorer:
         """
         # AGGRESSIVE: Higher weights for conflicts, lower for evidence
         self.weights = weights or {
-            'temporal': 0.40,   # CRITICAL: temporal conflicts are PRIMARY signal
-            'causal': 0.35,     # CRITICAL: causal conflicts are key
-            'entity': 0.10,     # DECREASED - less important than conflicts
-            'semantic': 0.10,   # DECREASED - less important than conflicts
+            'temporal': 0.35,   # REDUCED from 0.40 - less weight
+            'causal': 0.30,     # REDUCED from 0.35 - less weight  
+            'entity': 0.15,     # INCREASED - more balanced
+            'semantic': 0.15,   # INCREASED - more balanced
             'evidence': 0.05    # CRITICAL: Low evidence matters less than conflicts
         }
     
@@ -264,8 +264,8 @@ class InconsistencyScorer:
         num_conflicts_factor = min(num_conflicts / 6.0, 1.0)  # Saturate at 6
         
         # TUNED: Balanced scoring - don't amplify single conflicts too much
-        # Use 0.5 base scale factor, further reduced to 0.5x overall
-        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * 0.5
+        # Drastically reduced overall scale to 0.35x
+        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * 0.35
         
         return min(inconsistency, 1.0)
     
