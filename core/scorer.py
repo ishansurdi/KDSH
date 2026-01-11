@@ -211,26 +211,26 @@ class InconsistencyScorer:
         # If no direct match, use scaled-down score based on ALL conflicts
         if not relevant_conflicts:
             relevant_conflicts = temporal_conflicts
-            # TUNED: Scale down non-direct conflicts (they affect timeline less)
-            scale_factor = 0.6  
+            # TUNED: Scale down non-direct conflicts significantly
+            scale_factor = 0.4  # Reduced from 0.6
         else:
-            scale_factor = 1.0
+            scale_factor = 0.7  # Reduced from 1.0 - even direct conflicts scaled down
         
         # Weight by severity
         max_severity = max(c.severity for c in relevant_conflicts)
         avg_severity = np.mean([c.severity for c in relevant_conflicts])
         
-        # TUNED: Scale with number of conflicts (diminishing returns after 5)
+        # TUNED: Scale with number of conflicts (diminishing returns after 8)
         num_conflicts = len(relevant_conflicts)
-        num_conflicts_factor = min(num_conflicts / 5.0, 1.0)  # Saturate at 5
+        num_conflicts_factor = min(num_conflicts / 8.0, 1.0)  # Saturate at 8 (was 5)
         
-        # TUNED: Balanced combination - need both severity AND count
-        # Changed from 0.8/0.2 to 0.6/0.4 - both matter
-        inconsistency = (max_severity * 0.6 + num_conflicts_factor * 0.4) * scale_factor
+        # TUNED: More balanced combination - reduce severity dominance
+        # Changed from 0.6/0.4 to 0.5/0.5 - equal weights
+        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * scale_factor
         
-        # TUNED: Only boost if MANY high-severity conflicts (changed 2→3, 0.7→0.75)
-        if num_conflicts >= 3 and max_severity > 0.75:
-            inconsistency = min(inconsistency + 0.15, 1.0)
+        # TUNED: Only boost if VERY MANY high-severity conflicts
+        if num_conflicts >= 4 and max_severity > 0.80:  # Raised threshold
+            inconsistency = min(inconsistency + 0.10, 1.0)  # Smaller bonus
         
         return min(inconsistency, 1.0)
     
@@ -250,22 +250,24 @@ class InconsistencyScorer:
         ]
         
         if not relevant_conflicts:
-            # AGGRESSIVE: Causal claims without conflicts still suspicious
+            # Causal claims without conflicts - minimal suspicion
             if claim.claim_type == 'causal':
-                return 0.3  # INCREASED from 0.2 - causal claims need strong evidence
+                return 0.15  # Reduced from 0.3 - don't penalize too much
             return 0.0
         
-        # AGGRESSIVE: Weight by both severity and count with higher penalties
+        # Weight by both severity and count, but scaled down
         max_severity = max(c.severity for c in relevant_conflicts)
         avg_severity = np.mean([c.severity for c in relevant_conflicts])
         num_conflicts = len(relevant_conflicts)
         
-        # AGGRESSIVE: Multiple causal conflicts are VERY problematic
-        if num_conflicts >= 2:
-            return min(max_severity + 0.3, 1.0)  # INCREASED from 0.2
+        # TUNED: Scale with conflict count like temporal scorer
+        num_conflicts_factor = min(num_conflicts / 6.0, 1.0)  # Saturate at 6
         
-        # AGGRESSIVE: Even single causal conflict matters more
-        return min(max_severity * 1.1, 1.0)  # Amplify severity by 10%
+        # TUNED: Balanced scoring - don't amplify single conflicts too much
+        # Use 0.5 base scale factor to align with temporal scoring
+        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * 0.6
+        
+        return min(inconsistency, 1.0)
     
     def _score_entity(
         self,
