@@ -157,15 +157,15 @@ class InconsistencyScorer:
             elif inconsistent_claim_count >= 2:
                 overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)  # BOOSTED from 0.15
             
-            # CRITICAL: Direct conflict penalty - ANY conflict is a strong signal!
+            # CRITICAL: Direct conflict penalty - ANY conflict is a MASSIVE signal!
             if total_conflicts >= 5:
-                overall_inconsistency = min(overall_inconsistency + 0.35, 1.0)  # NEW: many conflicts
+                overall_inconsistency = min(overall_inconsistency + 0.45, 1.0)  # ULTRA BOOST from 0.35
             elif total_conflicts >= 3:
-                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)  # BOOSTED from 0.20
+                overall_inconsistency = min(overall_inconsistency + 0.35, 1.0)  # ULTRA BOOST from 0.25
             elif total_conflicts >= 2:
-                overall_inconsistency = min(overall_inconsistency + 0.18, 1.0)  # BOOSTED from none
+                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)  # ULTRA BOOST from 0.18
             elif total_conflicts >= 1:
-                overall_inconsistency = min(overall_inconsistency + 0.12, 1.0)  # BOOSTED from 0.10
+                overall_inconsistency = min(overall_inconsistency + 0.18, 1.0)  # ULTRA BOOST from 0.12
             
         else:
             overall_inconsistency = 0.0
