@@ -40,7 +40,7 @@ class NarrativeConsistencyPipeline:
             'chunk_size': 1000,
             'max_hops': 3,
             'top_k_evidence': 5,
-            'threshold': 0.60  # TUNED: Raised to 0.60 to hit ~36% detection rate
+            'threshold': 0.70  # TUNED: Raised to 0.70 to hit ~36% detection rate
         }
         
         # Initialize components
@@ -350,7 +350,7 @@ def main():
     parser.add_argument(
         '--threshold',
         type=float,
-        default=0.60,
+        default=0.70,
         help='Classification threshold'
     )
     
