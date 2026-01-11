@@ -350,7 +350,7 @@ def main():
     parser.add_argument(
         '--threshold',
         type=float,
-        default=0.25,
+        default=0.45,
         help='Classification threshold'
     )
     
