@@ -62,8 +62,7 @@ def main():
     # Index documents
     print("\n[4] Indexing documents...")
     for doc in tqdm(documents, desc="Indexing"):
-        chunks = doc_store.add_document(doc['content'], doc['id'])
-        memory.add_narrative(doc['content'], doc['id'], doc['title'])
+        doc_store.ingest_novel(doc['content'], doc['id'])
     
     # Extract features from training data
     print("\n[5] Extracting features from training data...")
