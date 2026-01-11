@@ -158,14 +158,17 @@ class InconsistencyScorer:
                 overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)  # BOOSTED from 0.15
             
             # CRITICAL: Direct conflict penalty - ANY conflict is a MASSIVE signal!
+            # 5+ conflicts = GUARANTEED inconsistent (must push over threshold)
             if total_conflicts >= 5:
-                overall_inconsistency = min(overall_inconsistency + 0.45, 1.0)  # ULTRA BOOST from 0.35
+                overall_inconsistency = min(overall_inconsistency + 0.60, 1.0)  # MASSIVE: guarantee >0.25 threshold
+            elif total_conflicts >= 4:
+                overall_inconsistency = min(overall_inconsistency + 0.50, 1.0)  # HUGE boost
             elif total_conflicts >= 3:
-                overall_inconsistency = min(overall_inconsistency + 0.35, 1.0)  # ULTRA BOOST from 0.25
+                overall_inconsistency = min(overall_inconsistency + 0.40, 1.0)  # Very high boost
             elif total_conflicts >= 2:
-                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)  # ULTRA BOOST from 0.18
+                overall_inconsistency = min(overall_inconsistency + 0.30, 1.0)  # High boost
             elif total_conflicts >= 1:
-                overall_inconsistency = min(overall_inconsistency + 0.18, 1.0)  # ULTRA BOOST from 0.12
+                overall_inconsistency = min(overall_inconsistency + 0.22, 1.0)  # Significant boost
             
         else:
             overall_inconsistency = 0.0
@@ -189,7 +192,12 @@ class InconsistencyScorer:
         temporal_conflicts: List
     ) -> float:
         """Score temporal consistency (0 = consistent, 1 = very inconsistent)"""
-        # Count conflicts involving this claim
+        # CRITICAL FIX: If ANY temporal conflicts exist, ALL temporal claims are affected!
+        # Conflicts indicate timeline issues that affect the entire backstory
+        if not temporal_conflicts:
+            return 0.0  # No conflicts = consistent
+        
+        # Count conflicts involving this specific claim
         relevant_conflicts = []
         
         for conflict in temporal_conflicts:
@@ -202,8 +210,10 @@ class InconsistencyScorer:
                 any(claim.claim_id in str(eid) for eid in event_ids if eid)):
                 relevant_conflicts.append(conflict)
         
+        # CRITICAL: If no direct match but conflicts exist, temporal claim still affected
         if not relevant_conflicts:
-            return 0.0  # No conflicts = consistent
+            # Use ALL conflicts to score - timeline broken affects everything
+            relevant_conflicts = temporal_conflicts
         
         # AGGRESSIVE: Weight by severity MUCH more aggressively
         max_severity = max(c.severity for c in relevant_conflicts)

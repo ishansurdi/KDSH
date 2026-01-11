@@ -67,6 +67,17 @@ class ConsistencyClassifier:
         Returns:
             Dict with prediction, confidence, and rationale
         """
+        # CRITICAL: DIRECT OVERRIDE - 4+ conflicts = inconsistent NO MATTER WHAT
+        total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
+        if total_conflicts >= 4:
+            return {
+                'prediction': 0,  # Inconsistent
+                'confidence': 0.90,
+                'rationale': f'DIRECT OVERRIDE: {total_conflicts} conflicts detected - timeline clearly broken',
+                'inconsistency_score': inconsistency_score,
+                'num_conflicts': total_conflicts
+            }
+        
         # AGGRESSIVE: Use MULTIPLE signals for classification, not just threshold
         base_prediction = 1 if inconsistency_score < self.threshold else 0
         
