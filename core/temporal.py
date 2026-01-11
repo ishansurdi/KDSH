@@ -325,7 +325,7 @@ class TemporalReasoningEngine:
                                 event2_id=target_event.event_id,
                                 description=f"Event order violation: {source_event.event_id} should be before {target_event.event_id}",
                                 evidence=[source_event.description[:150], target_event.description[:150]],
-                                severity=0.85 * constraint.confidence
+                                severity=0.92  # BOOSTED from 0.85, removed confidence multiplication
                             ))
                     elif constraint.relation == 'concurrent':
                         if abs(source_event.timestamp - target_event.timestamp) > 1:
@@ -334,7 +334,7 @@ class TemporalReasoningEngine:
                                 event1_id=source_event.event_id,
                                 event2_id=target_event.event_id,
                                 description=f"Events should be concurrent but occur at different times",
-                                severity=0.75 * constraint.confidence
+                                severity=0.88  # BOOSTED from 0.75, removed confidence multiplication
                             ))
         
         # IMPROVED: Check for circular temporal dependencies
@@ -346,7 +346,7 @@ class TemporalReasoningEngine:
                     event1_id=str(cycle[0]),
                     event2_id=str(cycle[-1]),
                     description=f"Circular temporal dependency detected: {' -> '.join(cycle[:3])}",
-                    severity=0.9
+                    severity=0.95  # BOOSTED from 0.9
                 ))
         
         # IMPROVED: Check for conflicting temporal markers in text
@@ -513,17 +513,17 @@ class TemporalReasoningEngine:
         
         # IMPROVED: More comprehensive anachronism detection
         modern_tech = {
-            '20th_century': ['computer', 'internet', 'smartphone', 'email', 'television', 'radio', 'airplane', 'car', 'telephone'],
-            '19th_century_plus': ['telegraph', 'railroad', 'steam engine', 'photography'],
-            '18th_century_plus': ['printing press', 'gunpowder']
+            '20th_century': ['computer', 'internet', 'smartphone', 'email', 'television', 'tv', 'radio', 'airplane', 'plane', 'car', 'automobile', 'telephone', 'phone', 'mobile', 'cell phone', 'website', 'digital', 'laser', 'nuclear', 'satellite', 'rocket', 'jet', 'plastic', 'nylon', 'radar', 'sonar', 'video', 'dvd', 'cd', 'usb'],
+            '19th_century_plus': ['telegraph', 'railroad', 'railway', 'train', 'steam engine', 'photography', 'camera', 'photograph', 'electric', 'electricity', 'lightbulb', 'phonograph'],
+            '18th_century_plus': ['printing press', 'gunpowder', 'cannon', 'musket', 'rifle']
         }
         
         historical_periods = {
-            'ancient': ['ancient', 'classical', 'roman empire', 'greek', 'bc', 'b.c.'],
-            'medieval': ['medieval', 'middle ages', 'feudal', 'knight', 'castle'],
-            'renaissance': ['renaissance', '15th century', '16th century'],
-            '17th_18th': ['17th century', '18th century', 'enlightenment', 'colonial'],
-            '19th': ['19th century', 'victorian', '1800s', 'industrial revolution'],
+            'ancient': ['ancient', 'classical', 'roman empire', 'rome', 'greek', 'greece', 'bc', 'b.c.', 'antiquity', 'pharaoh', 'caesar'],
+            'medieval': ['medieval', 'middle ages', 'feudal', 'knight', 'castle', 'crusade', 'plague', 'dark ages', 'gothic'],
+            'renaissance': ['renaissance', '15th century', '16th century', '1400s', '1500s'],
+            '17th_18th': ['17th century', '18th century', '1600s', '1700s', 'enlightenment', 'colonial', 'revolutionary war', 'napoleon'],
+            '19th': ['19th century', 'victorian', '1800s', 'industrial revolution', 'civil war', 'napoleon'],
         }
         
         # Check each event
@@ -550,7 +550,7 @@ class TemporalReasoningEngine:
                                     event1_id=event.event_id,
                                     description=f"Anachronism: '{term}' in {detected_period} context",
                                     evidence=[event.description[:200]],
-                                    severity=0.85
+                                    severity=0.93  # BOOSTED from 0.85
                                 ))
                     elif detected_period == '17th_18th' and tech_era == '20th_century':
                         for term in terms:
@@ -560,7 +560,7 @@ class TemporalReasoningEngine:
                                     event1_id=event.event_id,
                                     description=f"Anachronism: '{term}' in {detected_period} context",
                                     evidence=[event.description[:200]],
-                                    severity=0.8
+                                    severity=0.90  # BOOSTED from 0.8
                                 ))
             
             # IMPROVED: Check evidence for temporal contradictions
@@ -582,7 +582,7 @@ class TemporalReasoningEngine:
                                     event1_id=event.event_id,
                                     description=f"Temporal mismatch: claim mentions {claim_year} but evidence mentions {ev_year}",
                                     evidence=[evidence.text[:200]],
-                                    severity=0.75
+                                    severity=0.88  # BOOSTED from 0.75
                                 ))
         
         return conflicts

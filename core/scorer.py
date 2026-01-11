@@ -146,22 +146,26 @@ class InconsistencyScorer:
             
             # CRITICAL: AGGRESSIVE aggregation - worst case dominates
             overall_inconsistency = (
-                max_inconsistency * 0.75 +  # CRITICAL: Maximum emphasis on worst conflict
-                avg_inconsistency * 0.25     # Minimal averaging
+                max_inconsistency * 0.80 +  # BOOSTED from 0.75 - even more emphasis on worst
+                avg_inconsistency * 0.20     # REDUCED from 0.25
             )
             
             # IMPROVED: Boost inconsistency if multiple claims are problematic
             inconsistent_claim_count = sum(1 for s in claim_scores if s['overall_inconsistency'] > 0.5)
             if inconsistent_claim_count >= 3:
-                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
+                overall_inconsistency = min(overall_inconsistency + 0.30, 1.0)  # BOOSTED from 0.25
             elif inconsistent_claim_count >= 2:
-                overall_inconsistency = min(overall_inconsistency + 0.15, 1.0)
+                overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)  # BOOSTED from 0.15
             
-            # CRITICAL: Direct conflict penalty - any conflict is a strong signal
-            if total_conflicts >= 2:
-                overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)
+            # CRITICAL: Direct conflict penalty - ANY conflict is a strong signal!
+            if total_conflicts >= 5:
+                overall_inconsistency = min(overall_inconsistency + 0.35, 1.0)  # NEW: many conflicts
+            elif total_conflicts >= 3:
+                overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)  # BOOSTED from 0.20
+            elif total_conflicts >= 2:
+                overall_inconsistency = min(overall_inconsistency + 0.18, 1.0)  # BOOSTED from none
             elif total_conflicts >= 1:
-                overall_inconsistency = min(overall_inconsistency + 0.10, 1.0)
+                overall_inconsistency = min(overall_inconsistency + 0.12, 1.0)  # BOOSTED from 0.10
             
         else:
             overall_inconsistency = 0.0
