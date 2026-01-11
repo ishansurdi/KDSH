@@ -115,6 +115,10 @@ class NarrativeConsistencyPipeline:
             # Extract claims - USE AGGRESSIVE EXTRACTION
             claims = self.claim_extractor.extract_claims_aggressive(backstory)
             
+            # DEBUG: Count temporal claims
+            temporal_claims_count = sum(1 for c in claims if c.temporal_info or any(kw in c.text.lower() for kw in ['age', 'year', 'old', 'before', 'after', 'when', 'during', 'born', 'died']))
+            print(f"    [DEBUG] Claims: {len(claims)} total, {temporal_claims_count} with temporal markers")
+            
             # Build constraints
             constraint_graph = self.constraint_builder.build_graph(claims)
             
