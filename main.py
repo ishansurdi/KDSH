@@ -198,6 +198,8 @@ class NarrativeConsistencyPipeline:
         
         # Process each example
         results = []
+        labels = []  # Collect labels if available
+        has_labels = False
         
         print("\nProcessing examples...")
         for example in tqdm(data):
@@ -205,6 +207,16 @@ class NarrativeConsistencyPipeline:
             story_id = example.get('story_id') or example.get('id')
             novel_file = example.get('novel_file') or example.get('book_name')
             backstory = example.get('backstory') or example.get('content')
+            
+            # Check if labels exist
+            label_value = example.get('label')
+            if label_value is not None:
+                has_labels = True
+                # Convert label: "consistent" -> 1, "contradict" -> 0
+                if isinstance(label_value, str):
+                    labels.append(1 if label_value.lower() == 'consistent' else 0)
+                else:
+                    labels.append(int(label_value))
             
             result = self.process_example(
                 story_id=str(story_id),
@@ -221,6 +233,18 @@ class NarrativeConsistencyPipeline:
             
             save_results(results, output_path)
             print(f"\n✓ Saved results to {output_path}")
+        
+        # Calculate accuracy if labels are available
+        if has_labels:
+            predictions = [r['prediction'] for r in results]
+            metrics = calculate_metrics(predictions, labels)
+            
+            print("\n" + "=" * 60)
+            print("EVALUATION METRICS")
+            print("=" * 60)
+            for metric, value in metrics.items():
+                print(f"{metric.capitalize()}: {value:.3f}")
+            print("=" * 60)
         
         return results
     
