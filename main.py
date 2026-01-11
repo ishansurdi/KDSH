@@ -40,7 +40,7 @@ class NarrativeConsistencyPipeline:
             'chunk_size': 1000,
             'max_hops': 3,
             'top_k_evidence': 5,
-            'threshold': 0.25  # ULTRA AGGRESSIVE: Lowered to 0.25 - detect MAXIMUM inconsistencies
+            'threshold': 0.45  # TUNED: Balanced threshold to hit ~36% detection rate
         }
         
         # Initialize components

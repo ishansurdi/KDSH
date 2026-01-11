@@ -67,14 +67,14 @@ class ConsistencyClassifier:
         Returns:
             Dict with prediction, confidence, and rationale
         """
-        # CRITICAL: DIRECT OVERRIDE - 4+ conflicts = inconsistent NO MATTER WHAT
+        # CRITICAL: DIRECT OVERRIDE - 6+ conflicts = inconsistent (tuned from 4)
         total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
         
         # DEBUG: Print what we're receiving
         print(f"    [CLASSIFIER] Score: {inconsistency_score:.3f}, Temporal: {len(temporal_conflicts)}, Causal: {len(causal_conflicts)}, Total: {total_conflicts}")
         
-        if total_conflicts >= 4:
-            print(f"    [CLASSIFIER] *** OVERRIDE TRIGGERED: {total_conflicts} conflicts >= 4 ***")
+        if total_conflicts >= 6:
+            print(f"    [CLASSIFIER] *** OVERRIDE TRIGGERED: {total_conflicts} conflicts >= 6 ***")
             return {
                 'prediction': 0,  # Inconsistent
                 'confidence': 0.90,
@@ -87,8 +87,8 @@ class ConsistencyClassifier:
         base_prediction = 1 if inconsistency_score < self.threshold else 0
         
         # ULTRA AGGRESSIVE: Override to inconsistent if HIGH-SEVERITY conflicts exist
-        high_severity_temporal = [c for c in temporal_conflicts if c.severity > 0.60]  # ULTRA LOW: catch more
-        high_severity_causal = [c for c in causal_conflicts if c.severity > 0.60]  # ULTRA LOW: catch more
+        high_severity_temporal = [c for c in temporal_conflicts if c.severity > 0.75]  # TUNED: more conservative
+        high_severity_causal = [c for c in causal_conflicts if c.severity > 0.75]  # TUNED: more conservative
         
         # Even if score is below threshold, classify as inconsistent if multiple high-severity conflicts
         if len(high_severity_temporal) >= 2 or len(high_severity_causal) >= 2:
@@ -130,10 +130,10 @@ class ConsistencyClassifier:
             prediction = 0
             confidence = min(confidence + 0.15, 0.95)
         
-        # RULE 2: Even 2 conflicts = suspicious
+        # RULE 2: 3+ conflicts = suspicious
         total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
-        if total_conflicts >= 2:  # LOWERED from 3
-            if inconsistency_score > 0.15:  # ULTRA LOW from 0.20
+        if total_conflicts >= 3:  # TUNED: more conservative
+            if inconsistency_score > 0.25:  # TUNED: higher threshold
                 prediction = 0
                 confidence = min(confidence + 0.10, 0.95)
         
@@ -143,15 +143,9 @@ class ConsistencyClassifier:
                 prediction = 0
         
         # RULE 4: Many temporal conflicts even if low severity = inconsistent
-        if len(temporal_conflicts) >= 4:  # LOWERED from 5
+        if len(temporal_conflicts) >= 5:  # TUNED: more conservative
             prediction = 0
             confidence = min(confidence + 0.10, 0.95)
-        
-        # RULE 5: ANY conflict at all if score is remotely high
-        if total_conflicts >= 1:
-            if inconsistency_score > 0.18:  # NEW: Single conflict + moderate score
-                prediction = 0
-                confidence = min(confidence + 0.05, 0.95)
         
         return {
             'prediction': prediction,
