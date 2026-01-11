@@ -302,7 +302,7 @@ class ConstraintBuilder:
             'life_stage': ['born', 'childhood', 'youth', 'married', 'died', 'graduated', 'retired']
         }
         
-        # AGGRESSIVE: Create constraints for EVERY claim pair with shared entities
+        # ULTRA AGGRESSIVE: Create constraints for ALL claim pairs, not just shared entities!
         for i, claim1 in enumerate(claims):
             text1 = claim1.text.lower()
             
@@ -316,8 +316,15 @@ class ConstraintBuilder:
                 text2 = claim2.text.lower()
                 has_temporal2 = any(kw in text2 for patterns in temporal_patterns.values() for kw in patterns)
                 
-                # If shared entities OR both have temporal markers
-                if set(claim1.entities) & set(claim2.entities) or (has_temporal1 and has_temporal2):
+                # CRITICAL: Check ANY claim pair, not just those with shared entities
+                # This catches more relationships!
+                should_link = (
+                    set(claim1.entities) & set(claim2.entities) or  # Shared entities
+                    (has_temporal1 and has_temporal2) or  # Both temporal
+                    has_temporal1 or has_temporal2  # NEW: Even ONE temporal marker
+                )
+                
+                if should_link:
                     
                     # Check for explicit ordering keywords
                     for relation_type, keywords in temporal_patterns.items():
@@ -414,16 +421,17 @@ class ConstraintBuilder:
             'consequence': ['therefore', 'thus', 'consequently', 'as a consequence', 'so']
         }
         
-        # AGGRESSIVE: Check ALL claims, not just causal type
+        # ULTRA AGGRESSIVE: Check ALL claims, not just causal type
         for i, claim1 in enumerate(claims):
             text1 = claim1.text.lower()
             
             # Check for causal markers in this claim
             for relation, markers in causal_markers.items():
                 if any(marker in text1 for marker in markers):
-                    # Link to ALL other claims with shared entities
+                    # Link to ALL other claims (not just those with shared entities)
                     for j, claim2 in enumerate(claims):
-                        if i != j and (set(claim1.entities) & set(claim2.entities)):
+                        if i != j:
+                            # CRITICAL: Link even without shared entities - causal relationships transcend entity matching
                             confidence = 0.9 if relation in ['requires', 'prevents'] else 0.75
                             constraints.append(Constraint(
                                 constraint_id=self._next_id(),
