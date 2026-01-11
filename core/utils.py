@@ -243,9 +243,10 @@ def save_results(results: List[Dict[str, Any]], output_path: str):
     if not results:
         return
     
-    fieldnames = results[0].keys()
+    # Only output story_id and prediction columns
+    fieldnames = ['story_id', 'prediction']
     with open(output_path, 'w', encoding='utf-8', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
         writer.writerows(results)
 
