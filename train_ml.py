@@ -168,6 +168,7 @@ def main():
     
     # Save trained classifier
     print("\n[9] Saving trained models...")
+    os.makedirs('results', exist_ok=True)
     with open('results/ml_classifier.pkl', 'wb') as f:
         pickle.dump(ml_classifier, f)
     print("    Saved to results/ml_classifier.pkl")
