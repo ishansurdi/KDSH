@@ -29,6 +29,8 @@ __all__ = [
     'load_csv_data',
     'save_results',
     'format_rationale',
+    'calculate_metrics',
+    'print_section',
     
     # Pathway Store
     'PathwayDocumentStore',

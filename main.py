@@ -24,6 +24,7 @@ from core import (
     load_csv_data, save_results, calculate_metrics, print_section
 )
 from tqdm import tqdm
+import pickle
 
 
 class NarrativeConsistencyPipeline:
@@ -54,6 +55,19 @@ class NarrativeConsistencyPipeline:
         self.classifier = ConsistencyClassifier(
             threshold=self.config['threshold']
         )
+        
+        # Try to load ML classifier if available
+        self.ml_classifier = None
+        ml_path = Path('results/ml_classifier.pkl')
+        if ml_path.exists():
+            try:
+                with open(ml_path, 'rb') as f:
+                    self.ml_classifier = pickle.load(f)
+                print("✓ Loaded trained ML classifier")
+            except Exception as e:
+                print(f"⚠ Could not load ML classifier: {e}")
+        else:
+            print("ℹ No trained ML classifier found (train with: python train_ml.py)")
         
         self.novel_cache = {}
         
@@ -154,14 +168,24 @@ class NarrativeConsistencyPipeline:
                 memory=memory
             )
             
-            # Classification
-            classification = self.classifier.classify(
-                inconsistency_score=score_result['overall_inconsistency'],
-                temporal_conflicts=temporal_conflicts,
-                causal_conflicts=causal_conflicts,
-                evidence_map=evidence_map,
-                claims=claims
-            )
+            # Classification - use ML if available, otherwise rule-based
+            if self.ml_classifier:
+                classification = self.ml_classifier.predict(
+                    inconsistency_score=score_result['overall_inconsistency'],
+                    temporal_conflicts=temporal_conflicts,
+                    causal_conflicts=causal_conflicts,
+                    evidence_map=evidence_map,
+                    claims=claims,
+                    component_scores=score_result['component_scores']
+                )
+            else:
+                classification = self.classifier.classify(
+                    inconsistency_score=score_result['overall_inconsistency'],
+                    temporal_conflicts=temporal_conflicts,
+                    causal_conflicts=causal_conflicts,
+                    evidence_map=evidence_map,
+                    claims=claims
+                )
             
             return {
                 'story_id': story_id,
