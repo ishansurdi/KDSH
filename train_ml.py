@@ -54,12 +54,9 @@ def main():
     # Initialize pipeline components
     print("\n[3] Initializing pipeline...")
     doc_store = PathwayDocumentStore(embedding_model=None, chunk_size=1000)
-    memory = HierarchicalNarrativeMemory()
     claim_extractor = ClaimExtractor()
     constraint_builder = ConstraintBuilder()
     retriever = MultiHopRetriever(doc_store, max_hops=3)
-    temporal_engine = TemporalReasoningEngine()
-    causal_engine = CausalReasoningEngine()
     scorer = InconsistencyScorer()
     
     # Index documents
@@ -77,54 +74,60 @@ def main():
     
     for idx, example in enumerate(tqdm(train_data, desc="Processing training examples")):
         try:
-            # Extract claims
-            claims = claim_extractor.extract_claims(
-                example['content'],
-                example['char'],
-                example['book_name']
-            )
+            # Extract novel file
+            novel_file = example.get('book_name', example.get('novel', ''))
+            backstory = example.get('content', '')
             
-            # Build constraints
-            constraints = constraint_builder.build_constraints(
-                claims,
-                example['book_name']
-            )
+            # Build memory for this novel
+            memory = HierarchicalNarrativeMemory()
+            chunks = []
+            for chunk_id, doc in doc_store.documents.items():
+                if doc_store.chunk_to_doc.get(chunk_id) == novel_file:
+                    chunks.append({
+                        'chunk_id': chunk_id,
+                        'text': doc.text,
+                        'metadata': doc.metadata
+                    })
+            memory.extract_narrative_from_chunks(chunks, novel_file)
+            
+            # Extract claims
+            claims = claim_extractor.extract_claims_aggressive(backstory)
+            
+            # Build constraint graph
+            constraint_graph = constraint_builder.build_graph(claims)
             
             # Retrieve evidence
-            evidence_map = {}
-            for claim in claims:
-                evidence = retriever.retrieve(
-                    claim.text,
-                    book_name=example['book_name']
-                )
-                evidence_map[claim.id] = evidence
-            
-            # Temporal reasoning
-            temporal_conflicts = temporal_engine.check_conflicts(
-                claims,
-                constraints,
-                example['book_name']
+            evidence_map = retriever.retrieve_for_claims(
+                claims=claims,
+                novel_id=novel_file,
+                top_k_per_claim=5
             )
             
-            # Causal reasoning
-            causal_conflicts = causal_engine.check_conflicts(
-                claims,
-                constraints,
-                example['book_name']
+            # Create reasoning engines with memory and constraints
+            temporal_engine = TemporalReasoningEngine(memory, constraint_graph)
+            causal_engine = CausalReasoningEngine(memory, constraint_graph)
+            
+            # Build timeline and check conflicts
+            temporal_engine.build_timeline(claims, evidence_map)
+            temporal_conflicts = temporal_engine.check_temporal_consistency(
+                claims, evidence_map
+            )
+            causal_conflicts = causal_engine.check_causal_consistency(
+                claims, evidence_map
             )
             
             # Score
-            score_result = scorer.score(
+            score_result = scorer.score_backstory(
                 claims=claims,
+                evidence_map=evidence_map,
                 temporal_conflicts=temporal_conflicts,
                 causal_conflicts=causal_conflicts,
-                evidence_map=evidence_map,
-                constraints=constraints
+                memory=memory
             )
             
             # Extract features
             features = ml_classifier.extract_features(
-                score_result['inconsistency_score'],
+                score_result['overall_inconsistency'],
                 temporal_conflicts,
                 causal_conflicts,
                 evidence_map,
@@ -140,6 +143,8 @@ def main():
             
         except Exception as e:
             print(f"\nError processing example {idx}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
     
     X_train = np.array(X_train)
