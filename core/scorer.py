@@ -42,7 +42,8 @@ class InconsistencyScorer:
         # AGGRESSIVE: Higher weights for conflicts, lower for evidence
         self.weights = weights or {
             'temporal': 0.40,   # CRITICAL: temporal conflicts are PRIMARY signal
-            'causal': 0.35,     # CRITICAL: causal conflicts are key\n            'entity': 0.10,     # DECREASED - less important than conflicts
+            'causal': 0.35,     # CRITICAL: causal conflicts are key
+            'entity': 0.10,     # DECREASED - less important than conflicts
             'semantic': 0.10,   # DECREASED - less important than conflicts
             'evidence': 0.05    # CRITICAL: Low evidence matters less than conflicts
         }
@@ -155,7 +156,8 @@ class InconsistencyScorer:
                 overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
             elif inconsistent_claim_count >= 2:
                 overall_inconsistency = min(overall_inconsistency + 0.15, 1.0)
-            \n            # CRITICAL: Direct conflict penalty - any conflict is a strong signal
+            
+            # CRITICAL: Direct conflict penalty - any conflict is a strong signal
             if total_conflicts >= 2:
                 overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)
             elif total_conflicts >= 1:
