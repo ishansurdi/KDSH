@@ -34,7 +34,7 @@ def main():
     
     # Load training data
     print("\n[1] Loading training data...")
-    train_data = load_csv_data('data/train.csv', has_labels=True)
+    train_data = load_csv_data('data/train.csv')
     print(f"Loaded {len(train_data)} training examples")
     
     # Load novels
