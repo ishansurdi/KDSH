@@ -170,13 +170,18 @@ class NarrativeConsistencyPipeline:
             
             # Classification - use ML if available, otherwise rule-based
             if self.ml_classifier:
+                # Build component_scores dict from available data
+                component_scores = {
+                    'average_inconsistency': score_result.get('average_inconsistency', 0.0),
+                    'max_inconsistency': score_result.get('max_inconsistency', 0.0)
+                }
                 classification = self.ml_classifier.predict(
                     inconsistency_score=score_result['overall_inconsistency'],
                     temporal_conflicts=temporal_conflicts,
                     causal_conflicts=causal_conflicts,
                     evidence_map=evidence_map,
                     claims=claims,
-                    component_scores=score_result['component_scores']
+                    component_scores=component_scores
                 )
             else:
                 classification = self.classifier.classify(
