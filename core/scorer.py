@@ -192,8 +192,6 @@ class InconsistencyScorer:
         temporal_conflicts: List
     ) -> float:
         """Score temporal consistency (0 = consistent, 1 = very inconsistent)"""
-        # CRITICAL FIX: If ANY temporal conflicts exist, ALL temporal claims are affected!
-        # Conflicts indicate timeline issues that affect the entire backstory
         if not temporal_conflicts:
             return 0.0  # No conflicts = consistent
         
@@ -210,25 +208,29 @@ class InconsistencyScorer:
                 any(claim.claim_id in str(eid) for eid in event_ids if eid)):
                 relevant_conflicts.append(conflict)
         
-        # CRITICAL: If no direct match but conflicts exist, temporal claim still affected
+        # If no direct match, use scaled-down score based on ALL conflicts
         if not relevant_conflicts:
-            # Use ALL conflicts to score - timeline broken affects everything
             relevant_conflicts = temporal_conflicts
+            # TUNED: Scale down non-direct conflicts (they affect timeline less)
+            scale_factor = 0.6  
+        else:
+            scale_factor = 1.0
         
-        # AGGRESSIVE: Weight by severity MUCH more aggressively
+        # Weight by severity
         max_severity = max(c.severity for c in relevant_conflicts)
         avg_severity = np.mean([c.severity for c in relevant_conflicts])
         
-        # AGGRESSIVE: Even ONE high-severity temporal conflict should matter
-        num_conflicts_factor = min(len(relevant_conflicts) / 2, 1.0)  # Changed from /3 to /2
+        # TUNED: Scale with number of conflicts (diminishing returns after 5)
+        num_conflicts = len(relevant_conflicts)
+        num_conflicts_factor = min(num_conflicts / 5.0, 1.0)  # Saturate at 5
         
-        # AGGRESSIVE: Combine with more weight on max severity
-        # Changed from 0.7/0.3 to 0.8/0.2 - one bad conflict is enough!
-        inconsistency = max_severity * 0.8 + num_conflicts_factor * 0.2
+        # TUNED: Balanced combination - need both severity AND count
+        # Changed from 0.8/0.2 to 0.6/0.4 - both matter
+        inconsistency = (max_severity * 0.6 + num_conflicts_factor * 0.4) * scale_factor
         
-        # AGGRESSIVE: Boost score if multiple high-severity conflicts
-        if len(relevant_conflicts) >= 2 and max_severity > 0.7:
-            inconsistency = min(inconsistency + 0.15, 1.0)  # Add bonus penalty
+        # TUNED: Only boost if MANY high-severity conflicts (changed 2→3, 0.7→0.75)
+        if num_conflicts >= 3 and max_severity > 0.75:
+            inconsistency = min(inconsistency + 0.15, 1.0)
         
         return min(inconsistency, 1.0)
     
