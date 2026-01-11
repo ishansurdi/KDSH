@@ -69,7 +69,12 @@ class ConsistencyClassifier:
         """
         # CRITICAL: DIRECT OVERRIDE - 4+ conflicts = inconsistent NO MATTER WHAT
         total_conflicts = len(temporal_conflicts) + len(causal_conflicts)
+        
+        # DEBUG: Print what we're receiving
+        print(f"    [CLASSIFIER] Score: {inconsistency_score:.3f}, Temporal: {len(temporal_conflicts)}, Causal: {len(causal_conflicts)}, Total: {total_conflicts}")
+        
         if total_conflicts >= 4:
+            print(f"    [CLASSIFIER] *** OVERRIDE TRIGGERED: {total_conflicts} conflicts >= 4 ***")
             return {
                 'prediction': 0,  # Inconsistent
                 'confidence': 0.90,
