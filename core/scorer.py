@@ -41,11 +41,10 @@ class InconsistencyScorer:
         """
         # AGGRESSIVE: Higher weights for conflicts, lower for evidence
         self.weights = weights or {
-            'temporal': 0.35,   # INCREASED from 0.25 - temporal conflicts are critical
-            'causal': 0.35,     # INCREASED from 0.25 - causal conflicts are critical
-            'entity': 0.15,     # Decreased slightly to emphasize conflicts
-            'semantic': 0.10,   # Decreased slightly to emphasize conflicts
-            'evidence': 0.05    # DECREASED from 0.10 - lack of evidence less important than conflicts
+            'temporal': 0.40,   # CRITICAL: temporal conflicts are PRIMARY signal
+            'causal': 0.35,     # CRITICAL: causal conflicts are key\n            'entity': 0.10,     # DECREASED - less important than conflicts
+            'semantic': 0.10,   # DECREASED - less important than conflicts
+            'evidence': 0.05    # CRITICAL: Low evidence matters less than conflicts
         }
     
     def score_claim(
@@ -144,12 +143,10 @@ class InconsistencyScorer:
             avg_inconsistency = np.mean(overall_scores)
             median_inconsistency = np.median(overall_scores)
             
-            # AGGRESSIVE: Weight heavily towards max (worst conflict matters MOST)
-            # Changed from 0.6/0.3/0.1 to 0.7/0.2/0.1 - even more emphasis on worst case
+            # CRITICAL: AGGRESSIVE aggregation - worst case dominates
             overall_inconsistency = (
-                max_inconsistency * 0.7 +      # INCREASED emphasis on worst conflict
-                avg_inconsistency * 0.2 +       # DECREASED emphasis on average
-                median_inconsistency * 0.1
+                max_inconsistency * 0.75 +  # CRITICAL: Maximum emphasis on worst conflict
+                avg_inconsistency * 0.25     # Minimal averaging
             )
             
             # IMPROVED: Boost inconsistency if multiple claims are problematic
@@ -157,13 +154,12 @@ class InconsistencyScorer:
             if inconsistent_claim_count >= 3:
                 overall_inconsistency = min(overall_inconsistency + 0.25, 1.0)
             elif inconsistent_claim_count >= 2:
-                # Multiple inconsistent claims is very bad
                 overall_inconsistency = min(overall_inconsistency + 0.15, 1.0)
-            
-            # IMPROVED: Factor in raw conflict counts directly
-            if total_conflicts >= 3:
-                conflict_penalty = min(total_conflicts * 0.05, 0.3)
-                overall_inconsistency = min(overall_inconsistency + conflict_penalty, 1.0)
+            \n            # CRITICAL: Direct conflict penalty - any conflict is a strong signal
+            if total_conflicts >= 2:
+                overall_inconsistency = min(overall_inconsistency + 0.20, 1.0)
+            elif total_conflicts >= 1:
+                overall_inconsistency = min(overall_inconsistency + 0.10, 1.0)
             
         else:
             overall_inconsistency = 0.0

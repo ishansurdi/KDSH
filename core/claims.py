@@ -219,6 +219,75 @@ class ClaimExtractor:
         
         return claims
     
+    def extract_claims_aggressive(self, backstory: str) -> List[Claim]:
+        """Enhanced claim extraction that catches MORE patterns."""
+        import re
+        
+        claims = []
+        
+        # Split on more punctuation
+        sentences = re.split(r'[.!?;]+', backstory)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        for sentence in sentences:
+            # ALWAYS create a basic claim for each sentence
+            claim_id = self._next_id()
+            
+            # Determine type more aggressively
+            text_lower = sentence.lower()
+            
+            if any(marker in text_lower for marker in ['before', 'after', 'during', 'when', 'since', 'until', 'while']):
+                claim_type = 'temporal'
+            elif any(marker in text_lower for marker in ['because', 'caused', 'led to', 'resulted', 'due to']):
+                claim_type = 'causal'
+            elif any(marker in text_lower for marker in ['was', 'is', 'had', 'has', 'became']):
+                claim_type = 'entity'
+            else:
+                claim_type = 'event'
+            
+            # Extract entities
+            from .utils import extract_entities
+            entities = extract_entities(sentence)
+            entity_names = [e['text'] for e in entities]
+            
+            # Create claim
+            claim = Claim(
+                claim_id=claim_id,
+                text=sentence,
+                claim_type=claim_type,
+                entities=entity_names,
+                temporal_info=sentence if claim_type == 'temporal' else None
+            )
+            claims.append(claim)
+            
+            # EXTRACT AGE/DATE CLAIMS EXPLICITLY
+            age_pattern = r'(\d+)\s*(?:years?\s*old|aged|age)'
+            age_match = re.search(age_pattern, text_lower)
+            if age_match:
+                age_claim = Claim(
+                    claim_id=self._next_id(),
+                    text=f"Age {age_match.group(1)} mentioned",
+                    claim_type='temporal',
+                    entities=entity_names,
+                    temporal_info=age_match.group(0)
+                )
+                claims.append(age_claim)
+            
+            # Extract year claims
+            year_pattern = r'\b(1[7-9]\d{2}|20[0-2]\d)\b'
+            year_matches = re.findall(year_pattern, sentence)
+            for year in year_matches:
+                year_claim = Claim(
+                    claim_id=self._next_id(),
+                    text=f"Year {year} mentioned in context",
+                    claim_type='temporal',
+                    entities=entity_names,
+                    temporal_info=f"year {year}"
+                )
+                claims.append(year_claim)
+        
+        return claims
+    
     def _next_id(self) -> str:
         """Generate next claim ID"""
         self.claim_counter += 1

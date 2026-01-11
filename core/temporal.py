@@ -176,6 +176,10 @@ class TemporalReasoningEngine:
         gaps = self._check_temporal_gaps()
         conflicts.extend(gaps)
         
+        # CRITICAL: Check age/date validation
+        age_conflicts = self._check_age_date_validation()
+        conflicts.extend(age_conflicts)
+        
         print(f"⚠ Found {len(conflicts)} temporal conflicts")
         
         return conflicts
@@ -627,3 +631,80 @@ class TemporalReasoningEngine:
                 return abs(event1.timestamp - event2.timestamp)
         
         return None
+    
+    def _check_age_date_validation(self) -> List[TemporalConflict]:
+        """CRITICAL: Validate age vs dates vs life stages."""
+        import re
+        
+        conflicts = []
+        
+        # Extract ALL age and date information
+        ages_by_event = {}
+        dates_by_event = {}
+        life_stages_by_event = {}
+        
+        for event_id, event in self.events.items():
+            text = event.description.lower()
+            
+            # Extract age
+            age_pattern = r'(\d+)\s*(?:years?\s*old|aged|age)'
+            age_match = re.search(age_pattern, text)
+            if age_match:
+                ages_by_event[event_id] = int(age_match.group(1))
+            
+            # Extract year
+            year_pattern = r'\b(1[7-9]\d{2}|20[0-2]\d)\b'
+            year_match = re.search(year_pattern, text)
+            if year_match:
+                dates_by_event[event_id] = int(year_match.group(1))
+            
+            # Detect life stages
+            if 'born' in text or 'birth' in text:
+                life_stages_by_event[event_id] = ('born', 0, 0)
+            elif 'child' in text or 'childhood' in text:
+                life_stages_by_event[event_id] = ('childhood', 5, 12)
+            elif 'graduated' in text or 'university' in text or 'college' in text:
+                life_stages_by_event[event_id] = ('graduated', 22, 30)
+            elif 'married' in text or 'wed' in text:
+                life_stages_by_event[event_id] = ('married', 18, 100)
+            elif 'retired' in text:
+                life_stages_by_event[event_id] = ('retired', 60, 100)
+        
+        # VALIDATION 1: Age vs Life Stage
+        for event_id, age in ages_by_event.items():
+            if event_id in life_stages_by_event:
+                stage, min_age, max_age = life_stages_by_event[event_id]
+                
+                if age < min_age or (max_age < 100 and age > max_age):
+                    conflicts.append(TemporalConflict(
+                        conflict_type='impossibility',
+                        event1_id=event_id,
+                        description=f"Age {age} impossible for life stage '{stage}' (expected {min_age}-{max_age})",
+                        evidence=[self.events[event_id].description],
+                        severity=0.95
+                    ))
+        
+        # VALIDATION 2: Infer birth year and check consistency
+        birth_years = {}
+        for event_id in ages_by_event:
+            if event_id in dates_by_event:
+                age = ages_by_event[event_id]
+                year = dates_by_event[event_id]
+                inferred_birth = year - age
+                birth_years[event_id] = inferred_birth
+        
+        # Check if inferred birth years are consistent
+        if len(birth_years) > 1:
+            birth_year_values = list(birth_years.values())
+            for i, by1 in enumerate(birth_year_values):
+                for by2 in birth_year_values[i+1:]:
+                    if abs(by1 - by2) > 2:  # Allow 2 year tolerance
+                        conflicts.append(TemporalConflict(
+                            conflict_type='impossibility',
+                            event1_id=list(birth_years.keys())[i],
+                            event2_id=list(birth_years.keys())[i+1],
+                            description=f"Birth year inconsistent: inferred {by1} vs {by2}",
+                            severity=0.90
+                        ))
+        
+        return conflicts

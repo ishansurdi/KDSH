@@ -112,8 +112,8 @@ class NarrativeConsistencyPipeline:
             memory = HierarchicalNarrativeMemory()
             memory.extract_narrative_from_chunks(chunks, novel_file)
             
-            # Extract claims
-            claims = self.claim_extractor.extract_claims(backstory)
+            # Extract claims - USE AGGRESSIVE EXTRACTION
+            claims = self.claim_extractor.extract_claims_aggressive(backstory)
             
             # Build constraints
             constraint_graph = self.constraint_builder.build_graph(claims)
