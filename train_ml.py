@@ -8,6 +8,7 @@ This script:
 4. Saves trained models
 """
 
+import os
 import sys
 import pickle
 from pathlib import Path
