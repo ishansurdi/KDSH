@@ -124,14 +124,19 @@ def main():
                 memory=memory
             )
             
-            # Extract features
+            # Extract features - build component_scores dict from available data
+            component_scores = {
+                'average_inconsistency': score_result.get('average_inconsistency', 0.0),
+                'max_inconsistency': score_result.get('max_inconsistency', 0.0)
+            }
+            
             features = ml_classifier.extract_features(
                 score_result['overall_inconsistency'],
                 temporal_conflicts,
                 causal_conflicts,
                 evidence_map,
                 claims,
-                score_result['component_scores']
+                component_scores
             )
             
             X_train.append(features)
