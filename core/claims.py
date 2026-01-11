@@ -220,71 +220,101 @@ class ClaimExtractor:
         return claims
     
     def extract_claims_aggressive(self, backstory: str) -> List[Claim]:
-        """Enhanced claim extraction that catches MORE patterns."""
+        """ULTRA AGGRESSIVE claim extraction - split backstory into MANY micro-claims."""
         import re
         
         claims = []
         
-        # Split on more punctuation
-        sentences = re.split(r'[.!?;]+', backstory)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        # Step 1: Split on ALL delimiters - create base sentences
+        # Split on: . ! ? ; , and but while when where
+        segments = re.split(r'[.!?;,]|\band\b|\bbut\b|\bwhile\b|\bwhen\b|\bwhere\b|\bwhich\b|\bwho\b', backstory, flags=re.IGNORECASE)
+        segments = [s.strip() for s in segments if s.strip() and len(s.strip()) > 10]  # Filter very short fragments
         
-        for sentence in sentences:
-            # ALWAYS create a basic claim for each sentence
-            claim_id = self._next_id()
+        # Extract entities once from full backstory for context
+        from .utils import extract_entities
+        all_entities = extract_entities(backstory)
+        all_entity_names = [e['text'] for e in all_entities]
+        
+        # Step 2: Process each segment into micro-claims
+        for segment in segments:
+            text_lower = segment.lower()
             
-            # Determine type more aggressively
-            text_lower = sentence.lower()
+            # Extract entities from this segment
+            segment_entities = extract_entities(segment)
+            entity_names = [e['text'] for e in segment_entities] or all_entity_names[:2]  # Use global entities as fallback
             
-            if any(marker in text_lower for marker in ['before', 'after', 'during', 'when', 'since', 'until', 'while']):
+            # Determine type
+            if any(marker in text_lower for marker in ['before', 'after', 'during', 'when', 'since', 'until', 'while', 'age', 'old', 'year', 'born', 'died']):
                 claim_type = 'temporal'
-            elif any(marker in text_lower for marker in ['because', 'caused', 'led to', 'resulted', 'due to']):
+            elif any(marker in text_lower for marker in ['because', 'caused', 'led to', 'resulted', 'due to', 'so', 'therefore']):
                 claim_type = 'causal'
-            elif any(marker in text_lower for marker in ['was', 'is', 'had', 'has', 'became']):
+            elif any(marker in text_lower for marker in ['was', 'is', 'were', 'had', 'has', 'became', 'known']):
                 claim_type = 'entity'
             else:
                 claim_type = 'event'
             
-            # Extract entities
-            from .utils import extract_entities
-            entities = extract_entities(sentence)
-            entity_names = [e['text'] for e in entities]
-            
-            # Create claim
+            # Create main claim for segment
             claim = Claim(
-                claim_id=claim_id,
-                text=sentence,
+                claim_id=self._next_id(),
+                text=segment.strip(),
                 claim_type=claim_type,
                 entities=entity_names,
-                temporal_info=sentence if claim_type == 'temporal' else None
+                temporal_info=segment if claim_type == 'temporal' else None
             )
             claims.append(claim)
             
-            # EXTRACT AGE/DATE CLAIMS EXPLICITLY
+            # Step 3: Extract EXPLICIT sub-claims for temporal/numerical info
+            
+            # AGE claims
             age_pattern = r'(\d+)\s*(?:years?\s*old|aged|age)'
-            age_match = re.search(age_pattern, text_lower)
-            if age_match:
+            for age_match in re.finditer(age_pattern, text_lower):
                 age_claim = Claim(
                     claim_id=self._next_id(),
-                    text=f"Age {age_match.group(1)} mentioned",
+                    text=f"Entity aged {age_match.group(1)}",
                     claim_type='temporal',
                     entities=entity_names,
-                    temporal_info=age_match.group(0)
+                    temporal_info=f"age:{age_match.group(1)}"
                 )
                 claims.append(age_claim)
             
-            # Extract year claims
+            # YEAR claims
             year_pattern = r'\b(1[7-9]\d{2}|20[0-2]\d)\b'
-            year_matches = re.findall(year_pattern, sentence)
-            for year in year_matches:
+            for year in re.findall(year_pattern, segment):
                 year_claim = Claim(
                     claim_id=self._next_id(),
-                    text=f"Year {year} mentioned in context",
+                    text=f"Event in year {year}",
                     claim_type='temporal',
                     entities=entity_names,
-                    temporal_info=f"year {year}"
+                    temporal_info=f"year:{year}"
                 )
                 claims.append(year_claim)
+            
+            # LIFE STAGE claims
+            life_stages = ['born', 'birth', 'childhood', 'youth', 'teen', 'student', 'graduated', 'married', 'career', 'retired', 'died', 'death']
+            for stage in life_stages:
+                if stage in text_lower:
+                    stage_claim = Claim(
+                        claim_id=self._next_id(),
+                        text=f"Life stage: {stage}",
+                        claim_type='temporal',
+                        entities=entity_names,
+                        temporal_info=f"stage:{stage}"
+                    )
+                    claims.append(stage_claim)
+        
+        # Step 4: If we still have too few claims, split the FULL backstory as one claim
+        if len(claims) < 2:
+            # Create at least 2 claims by splitting on first comma or "and"
+            parts = re.split(r',|\band\b', backstory, maxsplit=1, flags=re.IGNORECASE)
+            for part in parts:
+                if part.strip() and not any(c.text == part.strip() for c in claims):
+                    claims.append(Claim(
+                        claim_id=self._next_id(),
+                        text=part.strip(),
+                        claim_type='event',
+                        entities=all_entity_names,
+                        temporal_info=None
+                    ))
         
         return claims
     
