@@ -167,7 +167,9 @@ class NarrativeConsistencyPipeline:
             }
             
         except Exception as e:
+            import traceback
             print(f"Error processing {story_id}: {str(e)}")
+            traceback.print_exc()
             return {
                 'story_id': story_id,
                 'prediction': 0,

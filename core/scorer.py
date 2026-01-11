@@ -167,6 +167,7 @@ class InconsistencyScorer:
             overall_inconsistency = 0.0
             avg_inconsistency = 0.0
             max_inconsistency = 0.0
+            total_conflicts = 0
         
         return {
             'overall_inconsistency': overall_inconsistency,
