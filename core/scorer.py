@@ -211,10 +211,10 @@ class InconsistencyScorer:
         # If no direct match, use scaled-down score based on ALL conflicts
         if not relevant_conflicts:
             relevant_conflicts = temporal_conflicts
-            # TUNED: Scale down non-direct conflicts significantly
-            scale_factor = 0.4  # Reduced from 0.6
+            # TUNED: Scale down non-direct conflicts very significantly
+            scale_factor = 0.3  # Reduced from 0.4
         else:
-            scale_factor = 0.7  # Reduced from 1.0 - even direct conflicts scaled down
+            scale_factor = 0.6  # Reduced from 0.7 - even direct conflicts scaled down
         
         # Weight by severity
         max_severity = max(c.severity for c in relevant_conflicts)
@@ -264,8 +264,8 @@ class InconsistencyScorer:
         num_conflicts_factor = min(num_conflicts / 6.0, 1.0)  # Saturate at 6
         
         # TUNED: Balanced scoring - don't amplify single conflicts too much
-        # Use 0.5 base scale factor to align with temporal scoring
-        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * 0.6
+        # Use 0.5 base scale factor, further reduced to 0.5x overall
+        inconsistency = (max_severity * 0.5 + num_conflicts_factor * 0.5) * 0.5
         
         return min(inconsistency, 1.0)
     
