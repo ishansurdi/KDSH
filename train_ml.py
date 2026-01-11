@@ -57,7 +57,7 @@ def main():
     memory = HierarchicalNarrativeMemory()
     claim_extractor = ClaimExtractor()
     constraint_builder = ConstraintBuilder()
-    retriever = MultiHopRetriever(doc_store, max_hops=3, top_k=5)
+    retriever = MultiHopRetriever(doc_store, max_hops=3)
     temporal_engine = TemporalReasoningEngine()
     causal_engine = CausalReasoningEngine()
     scorer = InconsistencyScorer()
